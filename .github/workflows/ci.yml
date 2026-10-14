@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       apple_build:
-        description: Build and test the universal Mac app (uses macOS minutes)
+        description: Run all native, GUI, memory and rendering tests; build the universal app (uses macOS minutes)
         type: boolean
         default: false
   push:
@@ -23,7 +23,21 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - run: Scripts/check.sh
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/cache@v4
+        with:
+          path: .build/test-tools
+          key: macdown-test-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Scripts/check-secrets.py') }}
+      - run: python3 Scripts/test_pipeline.py portable
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MacDown-portable-tests-${{ github.run_number }}
+          path: Artifacts/Tests/
+          if-no-files-found: error
+          retention-days: 7
   macos:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.apple_build }}
     needs: portable
@@ -42,7 +56,12 @@ jobs:
             ~/Library/Caches/CocoaPods
             ~/.cocoapods
           key: macdown-pods-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Podfile.lock', 'Podfile') }}
-      - run: Scripts/build-macos.sh
+      - uses: actions/cache@v4
+        with:
+          path: .build/test-tools
+          key: macdown-test-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Scripts/check-secrets.py') }}
+      - name: Build once and run the complete Mac test pipeline
+        run: caffeinate -d -i -u python3 Scripts/test_pipeline.py full --portable-checked
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -52,5 +71,6 @@ jobs:
             Artifacts/MacDown.xcresult
             Artifacts/MacDown-unverified.zip
             Artifacts/Diagnostics/
+            Artifacts/Tests/
           if-no-files-found: warn
           retention-days: 3

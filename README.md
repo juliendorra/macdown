@@ -53,14 +53,12 @@ source pane. An outdated preview cannot overwrite newer source text.
 
 ## Build locally
 
-Install full Xcode, Ruby 3.3 or later, and Bundler 2.4.22. Command Line Tools alone
+Install full Xcode, Node.js, Ruby 3.3 or later, and Bundler 2.4.22. Command Line Tools alone
 cannot compile the app's Interface Builder documents.
 
 ```sh
 gem install bundler -v 2.4.22
-Scripts/check.sh
-Scripts/check-macos-local.sh
-Scripts/build-macos.sh
+python3 Scripts/test_pipeline.py full
 open Artifacts/MacDown.app
 ```
 
@@ -77,9 +75,52 @@ Version and build number are stored in `Tools/version.txt` and
 
 ## Tests and performance
 
-`Scripts/check.sh` runs the portable parser, source-selection, and project
-checks. `Scripts/check-macos-local.sh` checks the AppKit toolbar with Command
-Line Tools. `Scripts/build-macos.sh` runs the full XCTest suite with Xcode.
+Use the same automated pipeline locally and in GitHub Actions:
+
+| Command | Checks |
+| --- | --- |
+| `python3 Scripts/test_pipeline.py portable` | Project and resource checks, JavaScript source mapping, 300 parser cases, pipeline regression tests, tracked-file hygiene, and secret scans of source, submodules, and full Git history. Runs on Linux or macOS. |
+| `python3 Scripts/test_pipeline.py full` | Portable checks, sanitized AppKit toolbar checks, all XCTest tests, one universal Release build, and all app checks below. Requires Xcode. |
+| `python3 Scripts/test_pipeline.py app --app /path/to/MacDown.app` | Portable and toolbar checks, bundle/signature/architecture/CLI checks, packaged-app secret scan, 21 preview editing checks, renderer regressions, and small/large memory and latency measurements. Reuses an existing universal app; requires only Command Line Tools. |
+
+Each invocation creates a new folder under `Artifacts/Tests/` with a JSON result,
+a readable summary, logs for every stage, and the editing and benchmark reports.
+Failed checks return a nonzero exit code. An unavailable desktop is reported as
+blocked. Missing measurements or unfinished suites cannot count as passes.
+
+The secret scanner downloads Gitleaks 8.30.1 when needed and verifies its pinned
+SHA256 checksum. The scoped exclusions in `.gitleaksignore` are audited repository
+IDs from an obsolete Xcode file's original commit and upstream merge. No secret values are printed in
+reports. History scanning includes merge changes. Full history is required;
+shallow clones need `git fetch --unshallow`.
+Commit author names and email addresses are outside the secret scanner's scope.
+
+The performance run checks page/image/code reuse, highlighting, task lists,
+100 rapid edits, script and inline-event fallbacks, language changes, late image
+geometry, explicit refresh, printing, and closing with a render pending.
+It records the app and new WebKit helpers before edits, after edits, and after
+closing the document. It runs both a small document and about 7,000 lines.
+
+`Tests/performance-budgets.json` sets broad regression ceilings: 1,000 ms median
+and 1,500 ms p95 edit latency, 512 MiB after edits, 256 MiB after closing, and no
+page navigations during ordinary edits. These ceilings catch large regressions;
+the recorded measurements are more useful for smaller changes.
+
+To compare against an earlier app on the same machine:
+
+```sh
+python3 Scripts/test_pipeline.py app --app /path/to/new/MacDown.app \
+  --baseline-app /path/to/earlier/MacDown.app --repeats 2
+```
+
+App order reverses between repetitions. The candidate fails if its median
+latency exceeds the baseline by 25% plus 20 ms, or edited memory exceeds it by
+25% plus 32 MiB. Hardware and shared memory still affect results; compare on a
+quiet machine. Historical measurements from another host are not used as gates.
+
+Individual scripts remain available for focused checks. `Scripts/check.sh`
+runs the portable checks without the secret scanner; `Scripts/check-macos-local.sh`
+adds the toolbar checks; `Scripts/build-macos.sh` runs XCTest and packages an app.
 
 The local preview checks run against an already built development app:
 
@@ -146,9 +187,13 @@ in an isolated WebKit content world, separate from scripts in Markdown.
 
 Pushes and pull requests run Linux checks. The macOS job runs only when the
 workflow is started manually with the Mac build option enabled. It waits for
-the portable checks, caches dependencies, and tests and builds the universal
-app once. The job has a 20-minute timeout. Build artifacts are kept for three
-days.
+the portable checks, caches dependencies and test tools, and builds the universal
+app once. It then tests the packaged app, runs both renderer fixtures, and
+records memory and latency. The Linux prerequisite is reused for that exact
+commit. The job has a 20-minute timeout; GUI probes have their own timeouts.
+Mac build artifacts and reports are kept for three days; portable reports for
+seven days. Results also appear in the Actions job summary. A failed GUI or
+performance check makes the job fail and preserves diagnostics.
 
 Batch fixes and run the cheaper checks first. Check the results for the exact
 commit before starting another Mac build.
