@@ -1,6 +1,11 @@
 require 'yaml'
 
 workflow = YAML.load_file('.github/workflows/ci.yml')
+events = workflow['on'] || workflow[true] # Psych's YAML 1.1 parser treats "on" as true.
+%w[push pull_request].each do |event|
+  paths = events.fetch(event).fetch('paths')
+  abort 'Security and ignore changes must trigger cheap checks' unless ['.gitignore', '.gitleaks*'].all? { |path| paths.include?(path) }
+end
 jobs = workflow.fetch('jobs')
 native = jobs.fetch('macos')
 condition = native.fetch('if').gsub(/\s/, '')

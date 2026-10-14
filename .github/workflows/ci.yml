@@ -9,9 +9,9 @@ on:
         default: false
   push:
     branches: [master, main]
-    paths: ['MacDown/**', 'MacDownTests/**', 'Dependency/**', 'Tests/**', 'Scripts/**', 'Tools/**', 'MacDown.xcodeproj/**', 'macdown-cmd/**', 'Gemfile*', 'Podfile*', '.github/workflows/**']
+    paths: ['MacDown/**', 'MacDownTests/**', 'Dependency/**', 'Tests/**', 'Scripts/**', 'Tools/**', 'MacDown.xcodeproj/**', 'macdown-cmd/**', 'Gemfile*', 'Podfile*', '.github/workflows/**', '.gitignore', '.gitleaks*']
   pull_request:
-    paths: ['MacDown/**', 'MacDownTests/**', 'Dependency/**', 'Tests/**', 'Scripts/**', 'Tools/**', 'MacDown.xcodeproj/**', 'macdown-cmd/**', 'Gemfile*', 'Podfile*', '.github/workflows/**']
+    paths: ['MacDown/**', 'MacDownTests/**', 'Dependency/**', 'Tests/**', 'Scripts/**', 'Tools/**', 'MacDown.xcodeproj/**', 'macdown-cmd/**', 'Gemfile*', 'Podfile*', '.github/workflows/**', '.gitignore', '.gitleaks*']
 permissions:
   contents: read
 concurrency:
