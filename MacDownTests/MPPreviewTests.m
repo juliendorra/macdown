@@ -42,8 +42,10 @@
         }];
     [self waitForExpectationsWithTimeout:5 handler:nil];
     NSString *expected = [source stringByReplacingOccurrencesOfString:@"**bold**" withString:@"**better**"];
+    // AppKit updates the document's change count when the undo group closes,
+    // after the text storage has already received the preview edit.
     [self expectationForPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
-        return [document.markdown isEqualToString:expected];
+        return [document.markdown isEqualToString:expected] && document.isDocumentEdited;
     }] evaluatedWithObject:document handler:nil];
     [self waitForExpectationsWithTimeout:5 handler:nil];
     XCTAssertTrue(document.isDocumentEdited);
