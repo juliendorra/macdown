@@ -21,6 +21,8 @@ Build/
 build/
 DerivedData/
 Pods/
+.bundle/
+vendor/bundle/
 *.app/
 *.xcarchive/
 *.xcresult/

@@ -115,9 +115,10 @@ class Pipeline:
     def __init__(self, output, profile):
         self.output = output
         self.output.mkdir(parents=True, exist_ok=False)
+        state = subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).splitlines()
         self.report = {'profile': profile, 'status': 'running', 'stages': [], 'metrics': [],
                        'commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
-                       'dirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT)),
+                       'dirty': bool(state), 'worktree_changes': state,
                        'host': {'system': platform.system(), 'machine': platform.machine(), 'macos': platform.mac_ver()[0]}}
         self.save()
 
@@ -160,6 +161,7 @@ class Pipeline:
         self.report['status'] = status
         if error:
             self.report['error'] = str(error)
+            print(str(error), file=sys.stderr, flush=True)
         self.save()
         text = [f'# MacDown tests: {status}', '', f"Source: `{self.report['commit']}`", '', '| Check | Result | Seconds |', '| --- | --- | ---: |']
         text += [f"| {s['name']} | {s['status']} | {s.get('seconds', '—')} |" for s in self.report['stages']]

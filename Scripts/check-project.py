@@ -48,9 +48,10 @@ import subprocess
 tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=root).decode().split('\0')
 for name in filter(None, tracked):
     path = Path(name)
-    assert not any(part in {'.build', 'Artifacts', 'Pods', 'node_modules', 'DerivedData', 'xcuserdata', '.DS_Store'}
+    assert not any(part in {'.build', '.bundle', 'Artifacts', 'Pods', 'node_modules', 'DerivedData', 'xcuserdata', '.DS_Store'}
                    or part.endswith(('.app', '.dSYM', '.xcresult', '.xcarchive', '.xcscmblueprint'))
                    for part in path.parts), f'Generated artifact or developer state tracked: {name}'
+    assert not name.startswith('vendor/bundle/'), f'Installed Ruby dependencies tracked: {name}'
     assert path.name != '.env' and not path.name.startswith('.env.'), f'Local credentials tracked: {name}'
 assert (root / 'MacDown/Resources/Styles/GitHub-2020.css').stat().st_size > 1000
 nib = ET.parse(root / 'MacDown/Localization/Base.lproj/MPDocument.xib')

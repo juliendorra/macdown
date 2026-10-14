@@ -90,6 +90,11 @@ class PerformanceTests(unittest.TestCase):
 
 
 class ReportTests(unittest.TestCase):
+    def test_ruby_setup_outputs_do_not_dirty_source_or_hide_lockfile(self):
+        for path in ('.bundle/config', 'vendor/bundle/ruby/gems/example.rb'):
+            self.assertEqual(subprocess.run(['git', 'check-ignore', '--no-index', '--quiet', path], cwd=ROOT).returncode, 0)
+        self.assertEqual(subprocess.run(['git', 'check-ignore', '--no-index', '--quiet', 'Gemfile.lock'], cwd=ROOT).returncode, 1)
+
     def test_command_failure_is_saved_with_log_and_failed_summary(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()), patch.dict(os.environ, {'GITHUB_STEP_SUMMARY': ''}):
             pipeline = Pipeline(Path(directory) / 'run', 'portable')
