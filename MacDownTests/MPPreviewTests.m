@@ -23,6 +23,9 @@
         ofType:@"net.daringfireball.markdown" error:&error];
     XCTAssertNotNil(document, @"%@", error);
     [document makeWindowControllers];
+    // NSDocument creates its controller lazily; force the nib to load before
+    // checking the preview outlets or waiting for its navigation.
+    XCTAssertNotNil(document.windowControllers.firstObject.window);
     WKWebView *preview = [document valueForKey:@"preview"];
     XCTAssertTrue([preview isKindOfClass:WKWebView.class]);
     NSPredicate *ready = [NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {

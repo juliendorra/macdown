@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 xcodebuild -version
-Scripts/check.sh
+Scripts/check-macos-local.sh
 Scripts/setup.sh
 mkdir -p Artifacts
 rm -rf Artifacts/MacDown.xcresult Artifacts/Diagnostics
@@ -35,6 +35,12 @@ xcodebuild test -workspace MacDown.xcworkspace -scheme MacDown \
 app="$work/DerivedData/Build/Products/Release/MacDown.app"
 # The hosted test bundle is embedded by Xcode for execution, not distribution.
 rm -rf "$app/Contents/PlugIns/MacDownTests.xctest"
+# Xcode also injects its test runtime into the host. None belongs in the app
+# distributed to users; removing just the .xctest bundle leaves these behind.
+for runtime in "$app"/Contents/Frameworks/{XCT*,XCUnit,XCUIAutomation,Testing,_Testing_*}.framework \
+               "$app"/Contents/Frameworks/libXCTest*.dylib; do
+  rm -rf "$runtime"
+done
 # Sign nested executable bundles first, then the app. This local signature
 # requires no Apple account and does not claim notarization.
 while IFS= read -r -d '' item; do
