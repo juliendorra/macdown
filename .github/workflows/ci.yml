@@ -50,5 +50,7 @@ jobs:
           path: |
             Artifacts/MacDown-macOS.zip
             Artifacts/MacDown.xcresult
+            Artifacts/MacDown-unverified.zip
+            Artifacts/Diagnostics/
           if-no-files-found: warn
           retention-days: 3

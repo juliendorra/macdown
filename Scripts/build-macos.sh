@@ -6,15 +6,35 @@ xcodebuild -version
 Scripts/check.sh
 Scripts/setup.sh
 mkdir -p Artifacts
-rm -rf Artifacts/MacDown.xcresult
+rm -rf Artifacts/MacDown.xcresult Artifacts/Diagnostics
+rm -f Artifacts/MacDown-macOS.zip Artifacts/MacDown-unverified.zip
 work=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/macdown-build.XXXXXX")
-trap 'rm -rf "$work"' EXIT
+cleanup() {
+  result=$?
+  if (( result != 0 )); then
+    mkdir -p Artifacts/Diagnostics
+    # Preserve the built app for local diagnosis even when XCTest cannot boot.
+    product="$work/DerivedData/Build/Products/Release/MacDown.app"
+    if [[ -d "$product" ]]; then
+      ditto -c -k --keepParent "$product" Artifacts/MacDown-unverified.zip || true
+    fi
+    reports="$HOME/Library/Logs/DiagnosticReports"
+    if [[ -d "$reports" ]]; then
+      find "$reports" -maxdepth 1 -type f -name 'MacDown*.ips' \
+        -exec cp {} Artifacts/Diagnostics/ \; || true
+    fi
+  fi
+  rm -rf "$work"
+}
+trap cleanup EXIT
 xcodebuild test -workspace MacDown.xcworkspace -scheme MacDown \
   -configuration Release -destination "platform=macOS,arch=$(uname -m)" \
   -derivedDataPath "$work/DerivedData" -resultBundlePath "$PWD/Artifacts/MacDown.xcresult" \
   ONLY_ACTIVE_ARCH=NO 'ARCHS=arm64 x86_64' \
-  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=''
+  CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY=-
 app="$work/DerivedData/Build/Products/Release/MacDown.app"
+# The hosted test bundle is embedded by Xcode for execution, not distribution.
+rm -rf "$app/Contents/PlugIns/MacDownTests.xctest"
 # Sign nested executable bundles first, then the app. This local signature
 # requires no Apple account and does not claim notarization.
 while IFS= read -r -d '' item; do
