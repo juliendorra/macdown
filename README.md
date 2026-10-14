@@ -56,6 +56,7 @@ Builder documents), Ruby 3.3+, and Bundler 2.4.22:
 ```sh
 gem install bundler -v 2.4.22
 Scripts/check.sh         # portable parser and project checks, no Apple CI
+Scripts/check-macos-local.sh # AppKit toolbar checks with CLT and bounds sanitizers
 Scripts/build-macos.sh   # dependencies, native tests, universal app, signature
 open Artifacts/MacDown.app
 ```
@@ -107,6 +108,15 @@ Markdown document, type quickly, scroll both panes, test anchor/external links,
 copy HTML, export HTML/PDF, change themes/zoom, and close while rendering.
 MathJax still requires its configured CDN connection.
 
+Local physical-memory measurements on Apple Silicon/macOS 27 were approximately
+92 MiB with a small document and 144 MiB with a 7,000-line (109 KiB) document,
+including the editor and its newly created WebKit content, GPU, and networking
+processes. Both previews rendered successfully. Closing the document released
+about 20 MiB from the editor after settling. These are single-run observations,
+not a memory limit or a leak test. The installed Intel-only legacy app could not
+run on this host, so a reduction versus legacy MacDown has not been established.
+Large documents, scripts, images, and multiple windows can use more memory.
+
 ### Translation
 
 Please help translation on [Transifex](https://www.transifex.com/macdown/macdown/).
@@ -126,4 +136,3 @@ MacDown depends a lot on other open source projects, such as [Hoedown](https://g
 ## Tipping
 
 If you find MacDown suitable for your needs, please consider [giving me a tip through PayPal](http://macdown.uranusjr.com/faq/#donation). Or, if you prefer to buy me a drink *personally* instead, just [send me a tweet](https://twitter.com/uranusjr) when you visit [Taipei, Taiwan](http://en.wikipedia.org/wiki/Taipei), where I live. I look forward to meeting you!
-
