@@ -49,7 +49,7 @@ done < <(find "$app/Contents/Frameworks" -depth \( -name '*.xpc' -o -name '*.app
 codesign --force --sign - "$app/Contents/SharedSupport/bin/macdown"
 codesign --force --sign "${CODESIGN_IDENTITY:--}" "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
-lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/MacDown"
+lipo "$app/Contents/MacOS/MacDown" -verify_arch arm64 x86_64
 python3 Scripts/verify-app.py "$app"
 # Replace only this generated app, preserving other artifacts.
 rm -rf Artifacts/MacDown.app
