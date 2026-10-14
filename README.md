@@ -22,8 +22,12 @@ updating the app for current macOS.
 
 ## Get the app
 
-This fork does not have a published release yet. Build it locally using the
-instructions below, or run the optional Mac build in
+Download the app from this fork's
+[GitHub releases](https://github.com/juliendorra/macdown/releases).
+Unzip `MacDown-0.8.1-macOS.zip` and move `MacDown.app` to Applications.
+The download runs on Apple Silicon and Intel Macs with macOS 13 or later.
+
+You can also build it locally using the instructions below, or run the optional Mac build in
 [GitHub Actions](https://github.com/juliendorra/macdown/actions/workflows/ci.yml).
 Select the branch you want to build and enable **Build and test the universal
 Mac app**. Download the resulting `MacDown-macOS-*` artifact, unzip the app, and
