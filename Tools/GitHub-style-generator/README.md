@@ -1,9 +1,11 @@
 # GitHub Style Generator
 
-This tool generates the GitHub style with official GitHub style package. npm 5 or above is required (to make use of `package-lock.json`). To update the style, bump the name in `Makefile`, and run:
+The generated `MacDown/Resources/Styles/GitHub-2020.css` is committed so normal
+app builds do not need Node.js. To regenerate it with the pinned Dart Sass tools:
 
-```bash
-npm install
-npm update primer-markdown
+```sh
+npm ci
 make
 ```
+
+Commit the stylesheet with changes to the generator or dependency lockfile.
