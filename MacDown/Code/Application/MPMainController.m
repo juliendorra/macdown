@@ -8,7 +8,7 @@
 
 #import "MPMainController.h"
 #import <MASPreferences/MASPreferencesWindowController.h>
-#import <Sparkle/SUUpdater.h>
+#import <Sparkle/Sparkle.h>
 #import "MPGlobals.h"
 #import "MPUtilities.h"
 #import "NSDocumentController+Document.h"
@@ -91,8 +91,9 @@ NS_INLINE void treat()
 }
 
 
-@interface MPMainController ()
+@interface MPMainController () <SPUUpdaterDelegate>
 @property (readonly) NSWindowController *preferencesWindowController;
+@property (strong) SPUStandardUpdaterController *updaterController;
 @end
 
 
@@ -102,21 +103,12 @@ NS_INLINE void treat()
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification
 {
-    // Using private API [WebCache setDisabled:YES] to disable WebView's cache
-    id webCacheClass = (id)NSClassFromString(@"WebCache");
-    if (webCacheClass) {
-// Ignoring "undeclared selector" warning
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wundeclared-selector"
-        BOOL setDisabledValue = YES;
-        NSMethodSignature *signature = [webCacheClass methodSignatureForSelector:@selector(setDisabled:)];
-        NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
-        invocation.selector = @selector(setDisabled:);
-        invocation.target = [webCacheClass class];
-        [invocation setArgument:&setDisabledValue atIndex:2];
-        [invocation invoke];
-#pragma clang diagnostic pop
-    }
+    // Fork/local builds have no signed update feed. Enable Sparkle only when
+    // the distributor supplies its Ed25519 public key and feed together.
+    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
+    if ([info[@"SUPublicEDKey"] length] && [info[@"SUFeedURL"] length])
+        self.updaterController = [[SPUStandardUpdaterController alloc]
+            initWithStartingUpdater:YES updaterDelegate:self userDriverDelegate:nil];
     [[NSAppleEventManager sharedAppleEventManager]
         setEventHandler:self
             andSelector:@selector(openUrlSchemeAppleEvent:withReplyEvent:)
@@ -260,13 +252,26 @@ NS_INLINE void treat()
 }
 
 
-#pragma mark - SUUpdaterDelegate
-
-- (NSString *)feedURLStringForUpdater:(SUUpdater *)updater
+- (IBAction)checkForUpdates:(id)sender
 {
-    if (self.preferences.updateIncludesPreReleases)
-        return [NSBundle mainBundle].infoDictionary[@"SUBetaFeedURL"];
-    return [NSBundle mainBundle].infoDictionary[@"SUFeedURL"];
+    [self.updaterController checkForUpdates:sender];
+}
+
+- (BOOL)validateMenuItem:(NSMenuItem *)item
+{
+    if (item.action == @selector(checkForUpdates:))
+        return self.updaterController.updater.canCheckForUpdates;
+    return YES;
+}
+
+#pragma mark - SPUUpdaterDelegate
+
+- (NSString *)feedURLStringForUpdater:(SPUUpdater *)updater
+{
+    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
+    if (self.preferences.updateIncludesPreReleases && [info[@"SUBetaFeedURL"] length])
+        return info[@"SUBetaFeedURL"];
+    return info[@"SUFeedURL"];
 }
 
 

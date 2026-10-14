@@ -7,7 +7,7 @@
 //
 
 #import <Foundation/Foundation.h>
-#import "MPDOcument.h"
+#import "MPDocument.h"
 
 @interface MPPlugIn : NSObject
 

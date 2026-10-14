@@ -19,17 +19,13 @@
 #import "MPAsset.h"
 #import "MPPreferences.h"
 
-// Warning: If the version of MathJax is ever updated, please check the status
-// of https://github.com/mathjax/MathJax/issues/548. If the fix has been merged
-// in to MathJax, then the WebResourceLoadDelegate can be removed from MPDocument
-// and MathJax.js can be removed from this project.
 static NSString * const kMPMathJaxCDN =
     @"https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.3/MathJax.js"
     @"?config=TeX-AMS-MML_HTMLorMML";
 static NSString * const kMPPrismScriptDirectory = @"Prism/components";
 static NSString * const kMPPrismThemeDirectory = @"Prism/themes";
 static NSString * const kMPPrismPluginDirectory = @"Prism/plugins";
-static size_t kMPRendererNestingLevel = SIZE_MAX;
+static size_t kMPRendererNestingLevel = 64;
 static int kMPRendererTOCLevel = 6;  // h1 to h6.
 
 
@@ -206,6 +202,7 @@ NS_INLINE BOOL MPAreNilableStringsEqual(NSString *s1, NSString *s2)
 @property (readonly) NSArray *baseStylesheets;
 @property (readonly) NSArray *prismStylesheets;
 @property (readonly) NSArray *prismScripts;
+- (void)parseMarkdown:(NSString *)markdown extensions:(int)extensions smartypants:(BOOL)smartypants frontMatter:(BOOL)frontMatter TOC:(BOOL)TOC;
 @property (readonly) NSArray *mathjaxScripts;
 @property (readonly) NSArray *mermaidStylesheets;
 @property (readonly) NSArray *mermaidScripts;
@@ -214,6 +211,8 @@ NS_INLINE BOOL MPAreNilableStringsEqual(NSString *s1, NSString *s2)
 @property (readonly) NSArray *scripts;
 @property (copy) NSString *currentHtml;
 @property (strong) NSOperationQueue *parseQueue;
+@property (strong) NSTimer *renderTimer;
+@property NSUInteger renderGeneration;
 @property int extensions;
 @property BOOL smartypants;
 @property BOOL TOC;
@@ -532,43 +531,66 @@ NS_INLINE void MPFreeHTMLRenderer(hoedown_renderer *htmlRenderer)
 
 #pragma mark - Public
     
-- (void)parseAndRenderWithMaxDelay:(NSTimeInterval)maxDelay {
+// All editor and preference access happens on the main thread. Each worker owns
+// its parser state; only the newest completed request may publish a result.
+- (void)scheduleRenderAfterDelay:(NSTimeInterval)delay
+{
+    NSAssert([NSThread isMainThread], @"Render requests must be on the main thread");
+    [self.renderTimer invalidate];
     [self.parseQueue cancelAllOperations];
-    [self.parseQueue addOperationWithBlock:^{
-        // Fetch the markdown (from the main thread)
-        __block NSString *markdown;
-        dispatch_sync(dispatch_get_main_queue(), ^{
-            markdown = [[self.dataSource rendererMarkdown:self] copy];
-        });
-
-        // Parse in backgound
-        [self parseMarkdown:markdown];
-        
-        // Wait untils is renderer has finished loading OR until the maxDelay has passed
-        // This should result in overall faster update times
-        NSDate *start = [NSDate date];
-        __block BOOL rendererIsLoading = true;
-        while (rendererIsLoading || [start timeIntervalSinceNow] >= maxDelay) {
-            dispatch_sync(dispatch_get_main_queue(), ^{
-                rendererIsLoading = [self.dataSource rendererLoading];
-            });
-        }
-        
-        // Render on main thread
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self render];
-        });
+    NSUInteger generation = ++self.renderGeneration;
+    __weak MPRenderer *weakSelf = self;
+    self.renderTimer = [NSTimer scheduledTimerWithTimeInterval:delay repeats:NO block:^(NSTimer *timer) {
+        MPRenderer *owner = weakSelf;
+        if (!owner || generation != owner.renderGeneration)
+            return;
+        owner.renderTimer = nil;
+        NSString *markdown = [[owner.dataSource rendererMarkdown:owner] copy] ?: @"";
+        id<MPRendererDelegate> delegate = owner.delegate;
+        int extensions = [delegate rendererExtensions:owner];
+        int flags = owner.rendererFlags;
+        BOOL smartypants = [delegate rendererHasSmartyPants:owner];
+        BOOL frontMatter = [delegate rendererDetectsFrontMatter:owner];
+        BOOL TOC = [delegate rendererRendersTOC:owner];
+        [owner.parseQueue addOperationWithBlock:^{
+            @autoreleasepool {
+                MPRenderer *worker = [[MPRenderer alloc] init];
+                worker.rendererFlags = flags;
+                [worker parseMarkdown:markdown extensions:extensions smartypants:smartypants
+                          frontMatter:frontMatter TOC:TOC];
+                [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+                    MPRenderer *current = weakSelf;
+                    if (!current || generation != current.renderGeneration)
+                        return;
+                    current.currentHtml = worker.currentHtml;
+                    current.currentLanguages = worker.currentLanguages;
+                    current.extensions = extensions;
+                    current.smartypants = smartypants;
+                    current.frontMatter = frontMatter;
+                    current.TOC = TOC;
+                    [current render];
+                }];
+            }
+        }];
     }];
 }
 
 - (void)parseAndRenderNow
 {
-    [self parseAndRenderWithMaxDelay:0];
+    [self scheduleRenderAfterDelay:0];
 }
 
 - (void)parseAndRenderLater
 {
-    [self parseAndRenderWithMaxDelay:0.5];
+    [self scheduleRenderAfterDelay:0.12];
+}
+
+- (void)cancelPendingRender
+{
+    ++self.renderGeneration;
+    [self.renderTimer invalidate];
+    self.renderTimer = nil;
+    [self.parseQueue cancelAllOperations];
 }
 
 - (void)parseIfPreferencesChanged
@@ -578,20 +600,13 @@ NS_INLINE void MPFreeHTMLRenderer(hoedown_renderer *htmlRenderer)
             || [delegate rendererHasSmartyPants:self] != self.smartypants
             || [delegate rendererRendersTOC:self] != self.TOC
             || [delegate rendererDetectsFrontMatter:self] != self.frontMatter)
-    {
-        [self parseMarkdown:[self.dataSource rendererMarkdown:self]];
-    }
+        [self parseAndRenderNow];
 }
 
-- (void)parseMarkdown:(NSString *)markdown {
+- (void)parseMarkdown:(NSString *)markdown extensions:(int)extensions
+          smartypants:(BOOL)smartypants frontMatter:(BOOL)hasFrontMatter TOC:(BOOL)hasTOC
+{
     [self.currentLanguages removeAllObjects];
-    
-    id<MPRendererDelegate> delegate = self.delegate;
-    int extensions = [delegate rendererExtensions:self];
-    BOOL smartypants = [delegate rendererHasSmartyPants:self];
-    BOOL hasFrontMatter = [delegate rendererDetectsFrontMatter:self];
-    BOOL hasTOC = [delegate rendererRendersTOC:self];
-    
     id frontMatter = nil;
     if (hasFrontMatter)
     {
@@ -600,20 +615,12 @@ NS_INLINE void MPFreeHTMLRenderer(hoedown_renderer *htmlRenderer)
         markdown = [markdown substringFromIndex:offset];
     }
     hoedown_renderer *htmlRenderer = MPCreateHTMLRenderer(self);
-    hoedown_renderer *tocRenderer = NULL;
-    if (hasTOC)
-    tocRenderer = MPCreateHTMLTOCRenderer();
-    self.currentHtml = MPHTMLFromMarkdown(
-                                          markdown, extensions, smartypants, [frontMatter HTMLTable],
-                                          htmlRenderer, tocRenderer);
+    hoedown_renderer *tocRenderer = hasTOC ? MPCreateHTMLTOCRenderer() : NULL;
+    self.currentHtml = MPHTMLFromMarkdown(markdown, extensions, smartypants,
+        [frontMatter HTMLTable], htmlRenderer, tocRenderer);
     if (tocRenderer)
-    hoedown_html_renderer_free(tocRenderer);
+        hoedown_html_renderer_free(tocRenderer);
     MPFreeHTMLRenderer(htmlRenderer);
-    
-    self.extensions = extensions;
-    self.smartypants = smartypants;
-    self.TOC = hasTOC;
-    self.frontMatter = hasFrontMatter;
 }
 
 - (void)renderIfPreferencesChanged

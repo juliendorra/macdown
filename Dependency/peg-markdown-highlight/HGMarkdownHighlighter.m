@@ -32,6 +32,9 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 	NSFontTraitMask _clearFontTraitMask;
 	pmh_element **_cachedElements;
 	NSOperationQueue *_parseHighlightsQueue;
+	NSUInteger _parseGeneration;
+	NSTimer *_parseTimer;
+	BOOL _scrollHighlightPending;
 	BOOL _styleDependenciesPending;
 	NSMutableArray *_styleParsingErrors;
 	CGFloat _defaultTextSize;
@@ -170,22 +173,30 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 
 - (void) requestParsing
 {
-	[_parseHighlightsQueue cancelAllOperations];
-	[_parseHighlightsQueue addOperationWithBlock:^{
-		// Fetch the markdown (from the main thread)
-		__block NSString *markdown = nil;
-		dispatch_sync(dispatch_get_main_queue(), ^{
-			markdown = [[self.targetTextView string] copy];
+    [_parseTimer invalidate];
+    _parseTimer = nil;
+    [_parseHighlightsQueue cancelAllOperations];
+    NSUInteger generation = ++_parseGeneration;
+    NSString *markdown = [self.targetTextView.string copy];
+    int extensions = self.extensions;
+    __weak HGMarkdownHighlighter *weakSelf = self;
+    [_parseHighlightsQueue addOperationWithBlock:^{
+        pmh_element **result = NULL;
+        if (markdown) {
+            pmh_markdown_to_elements((char *)markdown.UTF8String, extensions, &result);
+            pmh_sort_elements_by_pos(result);
+            [weakSelf convertOffsets:result text:markdown];
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            HGMarkdownHighlighter *owner = weakSelf;
+            if (!owner || generation != owner->_parseGeneration) {
+                if (result) pmh_free_elements(result);
+                return;
+            }
+            [owner cacheElementList:result];
+            [owner applyVisibleRangeHighlighting];
         });
-
-        pmh_element **result = [self parseText:markdown];
-		[self convertOffsets:result text:markdown];
-
-		dispatch_sync(dispatch_get_main_queue(), ^{
-			[self cacheElementList:result];
-			[self applyVisibleRangeHighlighting];
-		});
-	}];
+    }];
 }
 
 
@@ -403,32 +414,29 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 
 - (void)textViewTextDidChange:(NSNotification *)notification
 {
-	if (!self.waitInterval) {
-		[self requestParsing];
-	}
-	else {
-		// Use GCD timers to prevent delays from UI interactions
-		dispatch_time_t delayTime = dispatch_time(DISPATCH_TIME_NOW, self.waitInterval * NSEC_PER_SEC);
-		dispatch_after(delayTime, dispatch_get_main_queue(), ^{
-			[self requestParsing];
-		});
-	}
+    // Invalidate running work immediately; one timer coalesces the next parse.
+    ++_parseGeneration;
+    [_parseTimer invalidate];
+    if (!self.waitInterval) {
+        [self requestParsing];
+        return;
+    }
+    __weak HGMarkdownHighlighter *weakSelf = self;
+    _parseTimer = [NSTimer scheduledTimerWithTimeInterval:self.waitInterval repeats:NO
+        block:^(NSTimer *timer) { [weakSelf requestParsing]; }];
 }
 
 - (void) textViewDidScroll:(NSNotification *)notification
 {
-	if (_cachedElements == NULL)
-		return;
-    
-	[_parseHighlightsQueue cancelAllOperations];
-	[_parseHighlightsQueue addOperationWithBlock:^{
-		// No need to over render, set a delay
-		usleep(1000000 * 0.1);
-
-		dispatch_async(dispatch_get_main_queue(), ^{
-			[self applyVisibleRangeHighlighting];
-		});
-	}];
+    if (_cachedElements == NULL || _scrollHighlightPending) return;
+    _scrollHighlightPending = YES;
+    __weak HGMarkdownHighlighter *weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        HGMarkdownHighlighter *owner = weakSelf;
+        if (!owner) return;
+        owner->_scrollHighlightPending = NO;
+        [owner applyVisibleRangeHighlighting];
+    });
 }
 
 
@@ -685,6 +693,10 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 
 - (void) deactivate
 {
+    ++_parseGeneration;
+    [_parseTimer invalidate];
+    _parseTimer = nil;
+    [_parseHighlightsQueue cancelAllOperations];
 	if (!self.isActive)
 		return;
 	
@@ -710,6 +722,12 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 	self.isActive = NO;
 }
 
-
+- (void)dealloc
+{
+    [_parseTimer invalidate];
+    [_parseHighlightsQueue cancelAllOperations];
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    if (_cachedElements) pmh_free_elements(_cachedElements);
+}
 
 @end

@@ -30,6 +30,7 @@ typedef NS_ENUM(NSUInteger, MPCodeBlockAccessoryType)
 - (void)parseIfPreferencesChanged;
 - (void)renderIfPreferencesChanged;
 - (void)render;
+- (void)cancelPendingRender;
 
 - (NSString *)currentHtml;
 - (NSString *)HTMLForExportWithStyles:(BOOL)withStyles
@@ -40,7 +41,6 @@ typedef NS_ENUM(NSUInteger, MPCodeBlockAccessoryType)
 
 @protocol MPRendererDataSource <NSObject>
 
-- (BOOL)rendererLoading;
 - (NSString *)rendererMarkdown:(MPRenderer *)renderer;
 - (NSString *)rendererHTMLTitle:(MPRenderer *)renderer;
 

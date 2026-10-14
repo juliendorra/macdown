@@ -1,16 +1,7 @@
-//
-//  MPMathJaxCallbackHandler.h
-//  MacDown
-//
-//  Created by Tzu-ping Chung  on 07/8.
-//  Copyright (c) 2014 Tzu-ping Chung . All rights reserved.
-//
+#import <WebKit/WebKit.h>
 
-#import <Foundation/Foundation.h>
-
-@interface MPMathJaxListener : NSObject
-
-- (void)addCallback:(void (^)(void))block forKey:(NSString *)key;
-- (void)invokeCallbackForKey:(NSString *)key;
-
+// WKUserContentController retains its handlers. Forward weakly so closing a
+// document tears down its WebKit process and pending callbacks.
+@interface MPMathJaxListener : NSObject <WKScriptMessageHandler>
+@property (weak) id<WKScriptMessageHandler> target;
 @end

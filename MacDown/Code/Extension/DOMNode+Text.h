@@ -6,20 +6,10 @@
 //  Copyright (c) 2015 Tzu-ping Chung . All rights reserved.
 //
 
-#import <WebKit/WebKit.h>
+#import <Foundation/Foundation.h>
 
-struct DOMNodeTextCount
-{
-    NSUInteger words;
-    NSUInteger characters;
-    NSUInteger characterWithoutSpaces;
-};
-
-typedef struct DOMNodeTextCount DOMNodeTextCount;
-
-
-@interface DOMNode (Text)
-
-@property (readonly, nonatomic) DOMNodeTextCount textCount;
-
+@interface NSString (WordCount)
+- (NSUInteger)numberOfWords;
+- (NSUInteger)lengthWithoutNewlines;
+- (NSUInteger)lengthWithoutWhitespacesAndNewlines;
 @end
