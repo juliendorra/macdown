@@ -108,11 +108,12 @@ Markdown document, type quickly, scroll both panes, test anchor/external links,
 copy HTML, export HTML/PDF, change themes/zoom, and close while rendering.
 MathJax still requires its configured CDN connection.
 
-Local physical-memory measurements on Apple Silicon/macOS 27 were approximately
-92 MiB with a small document and 144 MiB with a 7,000-line (109 KiB) document,
+Local physical-memory measurements of the delivered Xcode build on Apple
+Silicon/macOS 27 were approximately 112 MiB with a small document and 164 MiB
+with a 7,000-line (109 KiB) document,
 including the editor and its newly created WebKit content, GPU, and networking
 processes. Both previews rendered successfully. Closing the document released
-about 20 MiB from the editor after settling. These are single-run observations,
+about 24–37 MiB from the editor after settling. These are single-run observations,
 not a memory limit or a leak test. The installed Intel-only legacy app could not
 run on this host, so a reduction versus legacy MacDown has not been established.
 Large documents, scripts, images, and multiple windows can use more memory.
