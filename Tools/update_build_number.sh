@@ -1,10 +1,5 @@
 #!/bin/bash
 
-if [ "$CI" == "true" ]; then
-    echo "Skipping build number update script under CI."
-    exit 0
-fi
-
 # Source: https://gist.github.com/karlvr/c93a98d7000ecb163895
 
 # This script automatically sets the version and short version string of
@@ -16,8 +11,8 @@ fi
 set -o errexit
 set -o nounset
 
-pushd `dirname $0` > /dev/null
-source $(pwd -P)/utils.sh
+pushd "$(dirname "$0")" > /dev/null
+source "$(pwd -P)/utils.sh"
 popd > /dev/null
 
 BUILD_VERSION=$(get_build_version)
