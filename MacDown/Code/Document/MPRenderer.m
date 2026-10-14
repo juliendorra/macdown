@@ -161,17 +161,21 @@ NS_INLINE NSString *MPGetHTML(
 
     MPPreferences *preferences = [MPPreferences sharedInstance];
 
-    static NSString *f = nil;
-    static dispatch_once_t token;
-    dispatch_once(&token, ^{
+    // Keep one compiled template, not a fresh parser/compiler for every edit.
+    // Export also uses this path; bound the cache to the selected template.
+    static HBTemplate *template = nil;
+    static NSString *templateName = nil;
+    if (!template || ![templateName isEqualToString:preferences.htmlTemplateName]) {
         NSBundle *bundle = [NSBundle mainBundle];
         NSURL *url = [bundle URLForResource:preferences.htmlTemplateName
                               withExtension:@".handlebars"
                                subdirectory:@"Templates"];
-        f = [NSString stringWithContentsOfURL:url
-                                     encoding:NSUTF8StringEncoding error:NULL];
-    });
-    NSCAssert(f.length, @"Could not read template");
+        NSString *source = [NSString stringWithContentsOfURL:url
+                                      encoding:NSUTF8StringEncoding error:NULL];
+        NSCAssert(source.length, @"Could not read template");
+        template = source ? [[HBTemplate alloc] initWithString:source] : nil;
+        templateName = [preferences.htmlTemplateName copy];
+    }
 
     NSString *titleTag = @"";
     if (title.length)
@@ -184,8 +188,7 @@ NS_INLINE NSString *MPGetHTML(
         @"body": body ? body : @"",
         @"scriptTags": scriptTags ? scriptTags : @[],
     };
-    NSString *html = [HBHandlebars renderTemplateString:f withContext:context
-                                                  error:NULL];
+    NSString *html = [template renderWithContext:context error:NULL];
     return html;
 }
 

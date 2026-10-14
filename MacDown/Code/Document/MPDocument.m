@@ -168,7 +168,11 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 @property CGFloat previewVisibleHeight;
 @property NSUInteger previewGeneration;
 @property BOOL previewMetricsPending;
+@property BOOL previewLayoutPending;
 @property BOOL previewScrollPending;
+@property BOOL editorGeometryDirty;
+@property NSSize editorGeometrySize;
+@property CGFloat editorGeometryVisibleHeight;
 @property (weak) IBOutlet NSPopUpButton *wordCountWidget;
 @property (strong) IBOutlet MPToolbarController *toolbarController;
 @property (copy, nonatomic) NSString *autosaveName;
@@ -299,6 +303,7 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
     self.isPreviewReady = NO;
     self.shouldHandleBoundsChange = YES;
     self.previousSplitRatio = -1.0;
+    self.editorGeometryDirty = YES;
     
     return self;
 }
@@ -361,6 +366,14 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
     [configuration.userContentController addUserScript:[[WKUserScript alloc]
         initWithSource:scrollScript injectionTime:WKUserScriptInjectionTimeAtDocumentEnd
         forMainFrameOnly:YES]];
+    NSURL *updateURL = [NSBundle.mainBundle URLForResource:@"preview-update"
+        withExtension:@"js" subdirectory:@"Extensions"];
+    NSString *updateScript = [NSString stringWithContentsOfURL:updateURL
+        encoding:NSUTF8StringEncoding error:NULL];
+    if (updateScript.length)
+        [configuration.userContentController addUserScript:[[WKUserScript alloc]
+            initWithSource:updateScript injectionTime:WKUserScriptInjectionTimeAtDocumentEnd
+            forMainFrameOnly:YES]];
     self.preview = [[WKWebView alloc] initWithFrame:self.previewContainer.bounds configuration:configuration];
     self.preview.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.preview.navigationDelegate = self;
@@ -374,6 +387,8 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
     [center addObserver:self selector:@selector(editorTextDidChange:)
                    name:NSTextDidChangeNotification object:self.editor];
+    [center addObserver:self selector:@selector(editorLayoutDidChange:)
+                   name:NSTextStorageDidProcessEditingNotification object:self.editor.textStorage];
     [center addObserver:self selector:@selector(userDefaultsDidChange:)
                    name:NSUserDefaultsDidChangeNotification
                  object:[NSUserDefaults standardUserDefaults]];
@@ -448,10 +463,15 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
         [self.renderer cancelPendingRender];
         self.renderer = nil;
         ++self.previewGeneration;
+        self.isPreviewReady = NO;
+        self.alreadyRenderingInWeb = NO;
         [self.preview stopLoading];
         self.preview.navigationDelegate = nil;
         self.preview.UIDelegate = nil;
         [self.preview.configuration.userContentController removeAllScriptMessageHandlers];
+        [self.preview removeFromSuperview];
+        self.preview = nil;
+        self.pendingPreviewHTML = nil;
         [[NSFileManager defaultManager] removeItemAtURL:self.previewDirectory error:NULL];
 
         [[NSNotificationCenter defaultCenter] removeObserver:self];
@@ -855,6 +875,7 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 - (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView
 {
     self.alreadyRenderingInWeb = NO;
+    self.isPreviewReady = NO;
     self.pendingPreviewHTML = nil;
     [self.renderer parseAndRenderNow];
 }
@@ -895,6 +916,14 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 - (void)userContentController:(WKUserContentController *)controller
      didReceiveScriptMessage:(WKScriptMessage *)message
 {
+    id layout = [message.body isKindOfClass:NSDictionary.class] ? message.body[@"layout"] : nil;
+    if (message.frameInfo.isMainFrame && [layout isKindOfClass:NSNumber.class]
+            && [layout boolValue] && self.isPreviewReady)
+    {
+        if (self.previewMetricsPending) self.previewLayoutPending = YES;
+        else [self updateHeaderLocations];
+        return;
+    }
     if (message.frameInfo.isMainFrame && [message.body isKindOfClass:NSNumber.class])
         self.lastPreviewScrollTop = [message.body doubleValue];
 }
@@ -992,11 +1021,14 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 
 - (void)loadPreviewHTML:(NSString *)html
 {
+    NSURL *baseURL = self.fileURL ?: self.preferences.htmlDefaultDirectoryUrl;
+    BOOL canUpdate = self.isPreviewReady && [self.currentBaseUrl isEqual:baseURL];
     self.alreadyRenderingInWeb = YES;
     self.isPreviewReady = NO;
     ++self.previewGeneration;
     self.previewMetricsPending = NO;
-    self.currentBaseUrl = self.fileURL ?: self.preferences.htmlDefaultDirectoryUrl;
+    self.previewLayoutPending = NO;
+    self.currentBaseUrl = baseURL;
     self.manualRender = self.preferences.markdownManualRender;
     // loadHTMLString does not grant WKWebView access to file resources. Load a
     // temporary file with an explicit base instead, preserving relative images,
@@ -1005,6 +1037,29 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
     base = [base stringByReplacingOccurrencesOfString:@"\"" withString:@"&quot;"];
     html = [html stringByReplacingOccurrencesOfString:@"<head>" withString:
         [NSString stringWithFormat:@"<head><base href=\"%@\">", base]];
+    if (canUpdate)
+    {
+        NSUInteger generation = self.previewGeneration;
+        __weak MPDocument *weakSelf = self;
+        [self.preview callAsyncJavaScript:
+            @"return window.__macdownUpdate ? window.__macdownUpdate(html, resources) : false;"
+            arguments:@{@"html": html, @"resources": NSBundle.mainBundle.resourceURL.absoluteString}
+            inFrame:nil inContentWorld:WKContentWorld.pageWorld
+            completionHandler:^(id result, NSError *error) {
+                MPDocument *doc = weakSelf;
+                if (!doc || generation != doc.previewGeneration) return;
+                if (error || ![result isKindOfClass:NSNumber.class] || ![result boolValue])
+                    [doc navigatePreviewHTML:html];
+                else
+                    [doc finishPreviewNavigation];
+            }];
+        return;
+    }
+    [self navigatePreviewHTML:html];
+}
+
+- (void)navigatePreviewHTML:(NSString *)html
+{
     NSURL *url = [self.previewDirectory URLByAppendingPathComponent:@"preview.html"];
     NSError *error = nil;
     if (![html writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:&error])
@@ -1020,8 +1075,16 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 
 - (void)editorTextDidChange:(NSNotification *)notification
 {
+    self.editorGeometryDirty = YES;
     if (self.needsHtml)
         [self.renderer parseAndRenderLater];
+}
+
+- (void)editorLayoutDidChange:(NSNotification *)notification
+{
+    // The background highlighter changes font attributes after a render can
+    // finish. Those changes must invalidate cached glyph positions too.
+    self.editorGeometryDirty = YES;
 }
 
 - (void)userDefaultsDidChange:(NSNotification *)notification
@@ -1415,6 +1478,7 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 
 - (void)setupEditor:(NSString *)changedKey
 {
+    self.editorGeometryDirty = YES;
     [self.highlighter deactivate];
 
     if (!changedKey || [changedKey isEqualToString:@"extensionFootnotes"])
@@ -1611,48 +1675,50 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
             doc.previewVisibleHeight = [result[@"visible"] doubleValue];
             doc.webViewHeaderLocations = result[@"headers"];
             if (doc.preferences.editorSyncScrolling) [doc syncScrollers];
-        }];
-    NSMutableArray<NSNumber *> *locations = [NSMutableArray array];
-
-    // Next, cache the locations of all of the reference nodes in the editor view.
-    NSInteger characterCount = 0;
-    NSLayoutManager *layoutManager = [self.editor layoutManager];
-    NSArray<NSString *> *documentLines = [self.editor.string componentsSeparatedByString:@"\n"];
-    [locations removeAllObjects];
-
-    // These are the patterns for markdown headers and images respectively. we're only going to
-    // handle images that are not inline with other text/images
-    NSRegularExpression *dashRegex = [NSRegularExpression regularExpressionWithPattern:@"^([-]+)$" options:0 error:nil];
-    NSRegularExpression *headerRegex = [NSRegularExpression regularExpressionWithPattern:@"^(#+)\\s" options:0 error:nil];
-    NSRegularExpression *imgRegex = [NSRegularExpression regularExpressionWithPattern:@"^!\\[[^\\]]*\\]\\([^)]*\\)$" options:0 error:nil];
-    BOOL previousLineHadContent = NO;
-    
-    CGFloat editorContentHeight = ceilf(NSHeight(self.editor.enclosingScrollView.documentView.bounds));
-    CGFloat editorVisibleHeight = ceilf(NSHeight(self.editor.enclosingScrollView.contentView.bounds));
-
-    // We start by splitting our document into lines, and then searching
-    // line by line for headers or images.
-    for (NSInteger lineNumber = 0; lineNumber < [documentLines count]; lineNumber++)
-    {
-        NSString *line = documentLines[lineNumber];
-        
-        if ((previousLineHadContent && [dashRegex numberOfMatchesInString:line options:0 range:NSMakeRange(0, [line length])]) ||
-            [imgRegex numberOfMatchesInString:line options:0 range:NSMakeRange(0, [line length])] ||
-            [headerRegex numberOfMatchesInString:line options:0 range:NSMakeRange(0, [line length])])
-        {
-            // Calculate where this header/image appears vertically in the editor
-            NSRange glyphRange = [layoutManager glyphRangeForCharacterRange:NSMakeRange(characterCount, [line length]) actualCharacterRange:nil];
-            NSRect topRect = [layoutManager boundingRectForGlyphRange:glyphRange inTextContainer:[self.editor textContainer]];
-            CGFloat headerY = NSMidY(topRect);
-
-            if(headerY <= editorContentHeight - editorVisibleHeight){
-                [locations addObject:@(headerY)];
+            if (doc.previewLayoutPending)
+            {
+                doc.previewLayoutPending = NO;
+                [doc updateHeaderLocations];
             }
+        }];
+    NSSize editorSize = self.editor.enclosingScrollView.documentView.bounds.size;
+    CGFloat visibleHeight = NSHeight(self.editor.enclosingScrollView.contentView.bounds);
+    if (!self.editorGeometryDirty && NSEqualSizes(editorSize, self.editorGeometrySize)
+            && visibleHeight == self.editorGeometryVisibleHeight)
+        return;
+    self.editorGeometryDirty = NO;
+    self.editorGeometrySize = editorSize;
+    self.editorGeometryVisibleHeight = visibleHeight;
+    NSMutableArray<NSNumber *> *locations = [NSMutableArray array];
+    NSLayoutManager *layoutManager = self.editor.layoutManager;
+    NSString *text = self.editor.string;
+    static NSRegularExpression *dashRegex, *headerRegex, *imgRegex;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        dashRegex = [NSRegularExpression regularExpressionWithPattern:@"^[-]+$" options:0 error:NULL];
+        headerRegex = [NSRegularExpression regularExpressionWithPattern:@"^#+\\s" options:0 error:NULL];
+        imgRegex = [NSRegularExpression regularExpressionWithPattern:@"^!\\[[^\\]]*\\]\\([^)]*\\)$" options:0 error:NULL];
+    });
+    BOOL previousLineHadContent = NO;
+    // Enumerate ranges in the source rather than allocating an array of every
+    // line. Only likely heading/image lines need a regular-expression match.
+    for (NSUInteger offset = 0; offset < text.length; ) {
+        NSUInteger start, end, contentsEnd;
+        [text getLineStart:&start end:&end contentsEnd:&contentsEnd forRange:NSMakeRange(offset, 0)];
+        NSRange line = NSMakeRange(start, contentsEnd - start);
+        unichar first = line.length ? [text characterAtIndex:start] : 0;
+        BOOL dash = first == '-' && [dashRegex numberOfMatchesInString:text options:0 range:line];
+        BOOL header = (previousLineHadContent && dash)
+            || (first == '#' && [headerRegex numberOfMatchesInString:text options:0 range:line])
+            || (first == '!' && [imgRegex numberOfMatchesInString:text options:0 range:line]);
+        if (header) {
+            NSRange glyphs = [layoutManager glyphRangeForCharacterRange:line actualCharacterRange:NULL];
+            NSRect rect = [layoutManager boundingRectForGlyphRange:glyphs inTextContainer:self.editor.textContainer];
+            CGFloat y = NSMidY(rect);
+            if (y <= editorSize.height - visibleHeight) [locations addObject:@(y)];
         }
-        
-        previousLineHadContent = [line length] && ![dashRegex numberOfMatchesInString:line options:0 range:NSMakeRange(0, [line length])];
-        
-        characterCount += [line length] + 1;
+        previousLineHadContent = line.length && !dash;
+        offset = end;
     }
 
     _editorHeaderLocations = [locations copy];

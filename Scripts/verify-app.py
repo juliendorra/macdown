@@ -9,7 +9,7 @@ with (app / 'Contents/Info.plist').open('rb') as stream:
 assert info['CFBundleShortVersionString'] == (root / 'Tools/version.txt').read_text().strip(), info
 assert info['CFBundleVersion'] == (root / 'Tools/build-number.txt').read_text().strip(), info
 assert info['LSMinimumSystemVersion'] == '13.0', info
-for resource in ['Base.lproj/MPDocument.nib', 'Prism/components/prism-core.min.js', 'Styles/GitHub-2020.css']:
+for resource in ['Base.lproj/MPDocument.nib', 'Prism/components/prism-core.min.js', 'Styles/GitHub-2020.css', 'Extensions/preview-update.js']:
     assert (app / 'Contents/Resources' / resource).exists(), resource
 assert (app / 'Contents/SharedSupport/bin/macdown').is_file()
 assert not (app / 'Contents/PlugIns/MacDownTests.xctest').exists(), 'Embedded test bundle'
