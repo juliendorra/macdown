@@ -17,10 +17,9 @@ target "MacDown" do
   pod 'Sparkle', '2.9.6', :inhibit_warnings => false
 
   pod 'PAPreferences', '~> 0.4'
-end
-
-target "MacDownTests" do
-  pod 'PAPreferences', '~> 0.4'
+  target "MacDownTests" do
+    inherit! :search_paths
+  end
 end
 
 target "macdown-cmd" do
