@@ -33,6 +33,10 @@ typedef NS_ENUM(NSUInteger, MPCodeBlockAccessoryType)
 - (void)cancelPendingRender;
 
 - (NSString *)currentHtml;
+// The exact source snapshot associated with currentHtml, never live editor text.
+@property (nonatomic, copy, readonly) NSString *currentMarkdown;
+@property (nonatomic, readonly) NSUInteger currentSourceOffset;
+@property (nonatomic, readonly) BOOL currentRendersTOC;
 - (NSString *)HTMLForExportWithStyles:(BOOL)withStyles
                          highlighting:(BOOL)withHighlighting;
 

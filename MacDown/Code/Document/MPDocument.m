@@ -164,6 +164,18 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 @property (strong) WKWebView *preview;
 @property (strong) NSURL *previewDirectory;
 @property (copy) NSString *pendingPreviewHTML;
+@property (copy) NSString *pendingPreviewMarkdown;
+@property (copy) NSString *previewEditingMarkdown;
+@property (copy) NSString *loadingPreviewMarkdown;
+@property BOOL previewInteractionPrepared;
+@property (copy) NSString *previewInteractionToken;
+@property NSUInteger previewInteractionSequence;
+@property NSUInteger previewSourceOffset;
+@property BOOL previewRendersTOC;
+@property BOOL previewIsComposing;
+@property BOOL previewDefersRendering;
+@property BOOL applyingPreviewEdit;
+@property (strong) NSNumber *previewCaret;
 @property CGFloat previewContentHeight;
 @property CGFloat previewVisibleHeight;
 @property NSUInteger previewGeneration;
@@ -359,6 +371,10 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
     MPMathJaxListener *listener = [[MPMathJaxListener alloc] init];
     listener.target = self;
     [configuration.userContentController addScriptMessageHandler:listener name:@"previewScroll"];
+    [configuration.userContentController addScriptMessageHandler:listener
+        contentWorld:WKContentWorld.defaultClientWorld name:@"previewInteraction"];
+    [configuration.userContentController addScriptMessageHandler:listener
+        contentWorld:WKContentWorld.defaultClientWorld name:@"previewScroll"];
     // Coalesce native scroll notifications to one per animation frame.
     NSString *scrollScript = @"let pending = false; addEventListener('scroll', () => {"
         "if (pending) return; pending = true; requestAnimationFrame(() => {"
@@ -374,7 +390,15 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
     if (updateScript.length)
         [configuration.userContentController addUserScript:[[WKUserScript alloc]
             initWithSource:updateScript injectionTime:WKUserScriptInjectionTimeAtDocumentEnd
-            forMainFrameOnly:YES]];
+            forMainFrameOnly:YES inContentWorld:WKContentWorld.defaultClientWorld]];
+    NSURL *editingURL = [NSBundle.mainBundle URLForResource:@"preview-edit"
+        withExtension:@"js" subdirectory:@"Extensions"];
+    NSString *editingScript = [NSString stringWithContentsOfURL:editingURL
+        encoding:NSUTF8StringEncoding error:NULL];
+    if (editingScript.length)
+        [configuration.userContentController addUserScript:[[WKUserScript alloc]
+            initWithSource:editingScript injectionTime:WKUserScriptInjectionTimeAtDocumentEnd
+            forMainFrameOnly:YES inContentWorld:WKContentWorld.defaultClientWorld]];
     self.preview = [[WKWebView alloc] initWithFrame:self.previewContainer.bounds configuration:configuration];
     self.preview.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.preview.navigationDelegate = self;
@@ -473,6 +497,10 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
         [self.preview removeFromSuperview];
         self.preview = nil;
         self.pendingPreviewHTML = nil;
+        self.pendingPreviewMarkdown = nil;
+        self.previewEditingMarkdown = nil;
+        self.loadingPreviewMarkdown = nil;
+        self.previewInteractionToken = nil;
         [[NSFileManager defaultManager] removeItemAtURL:self.previewDirectory error:NULL];
 
         [[NSNotificationCenter defaultCenter] removeObserver:self];
@@ -832,6 +860,25 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
         [self loadPreviewHTML:html];
         return;
     }
+    if (!self.previewInteractionPrepared)
+    {
+    if (![self.loadingPreviewMarkdown isEqualToString:self.editor.string])
+    {
+        [self.renderer parseAndRenderNow];
+        return;
+    }
+    self.previewEditingMarkdown = self.loadingPreviewMarkdown;
+    self.previewInteractionToken = NSUUID.UUID.UUIDString;
+    self.previewInteractionSequence = 0;
+    [self.preview callAsyncJavaScript:
+        @"return window.__macdownPreviewPrepare?.(source, token, offset, toc, caret);"
+        arguments:@{@"source": self.previewEditingMarkdown ?: @"",
+                    @"token": self.previewInteractionToken ?: @"",
+                    @"offset": @(self.previewSourceOffset), @"toc": @(self.previewRendersTOC),
+                    @"caret": self.previewCaret ?: NSNull.null}
+        inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:nil];
+    }
+    self.previewCaret = nil;
     [self scaleWebview];
     [self updateHeaderLocations];
     if (self.preferences.editorSyncScrolling)
@@ -878,6 +925,9 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
     self.alreadyRenderingInWeb = NO;
     self.isPreviewReady = NO;
     self.pendingPreviewHTML = nil;
+    self.pendingPreviewMarkdown = nil;
+    self.previewIsComposing = NO;
+    self.previewDefersRendering = NO;
     [self.renderer parseAndRenderNow];
 }
 
@@ -917,6 +967,13 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 - (void)userContentController:(WKUserContentController *)controller
      didReceiveScriptMessage:(WKScriptMessage *)message
 {
+    if ([message.name isEqualToString:@"previewInteraction"])
+    {
+        if (message.frameInfo.isMainFrame && message.webView == self.preview
+                && [message.body isKindOfClass:NSDictionary.class])
+            [self handlePreviewInteraction:message.body];
+        return;
+    }
     id layout = [message.body isKindOfClass:NSDictionary.class] ? message.body[@"layout"] : nil;
     if (message.frameInfo.isMainFrame && [layout isKindOfClass:NSNumber.class]
             && [layout boolValue] && self.isPreviewReady)
@@ -927,6 +984,80 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
     }
     if (message.frameInfo.isMainFrame && [message.body isKindOfClass:NSNumber.class])
         self.lastPreviewScrollTop = [message.body doubleValue];
+}
+
+// Validate every mutation against the exact source lineage shown in the page.
+// JS updates optimistically so fast typing does not wait for the render debounce.
+- (void)handlePreviewInteraction:(NSDictionary *)body
+{
+    NSString *kind = body[@"kind"];
+    if (![kind isKindOfClass:NSString.class]
+            || ![body[@"token"] isKindOfClass:NSString.class]
+            || ![body[@"token"] isEqualToString:self.previewInteractionToken]) return;
+    NSNumber *sequence = body[@"sequence"];
+    if (![sequence isKindOfClass:NSNumber.class]
+            || sequence.doubleValue != self.previewInteractionSequence
+            || ![self.editor.string isEqualToString:self.previewEditingMarkdown])
+    {
+        [self.preview callAsyncJavaScript:@"window.__macdownPreviewInvalidate?.();"
+            arguments:@{} inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:nil];
+        self.previewIsComposing = NO;
+        self.previewDefersRendering = NO;
+        [self.renderer parseAndRenderNow];
+        return;
+    }
+    if ([kind isEqualToString:@"composition"] || [kind isEqualToString:@"deferRender"])
+    {
+        if (![body[@"active"] isKindOfClass:NSNumber.class]) return;
+        if ([kind isEqualToString:@"composition"]) self.previewIsComposing = [body[@"active"] boolValue];
+        else self.previewDefersRendering = [body[@"active"] boolValue];
+        if (!self.previewIsComposing && !self.previewDefersRendering)
+        {
+            self.pendingPreviewHTML = nil;
+            self.pendingPreviewMarkdown = nil;
+            [self.renderer parseAndRenderNow];
+        }
+        return;
+    }
+    if ([kind isEqualToString:@"historyUndo"] || [kind isEqualToString:@"historyRedo"])
+    {
+        if ([kind isEqualToString:@"historyUndo"] && self.editor.undoManager.canUndo)
+            [self.editor.undoManager undo];
+        else if ([kind isEqualToString:@"historyRedo"] && self.editor.undoManager.canRedo)
+            [self.editor.undoManager redo];
+        self.previewCaret = @(self.editor.selectedRange.location);
+        [self.renderer parseAndRenderNow];
+        return;
+    }
+    NSNumber *start = body[@"start"], *length = body[@"length"];
+    NSUInteger count = self.editor.string.length;
+    if (![start isKindOfClass:NSNumber.class] || ![length isKindOfClass:NSNumber.class]
+            || !isfinite(start.doubleValue) || !isfinite(length.doubleValue)
+            || start.doubleValue < 0 || length.doubleValue < 0
+            || start.doubleValue > count || length.doubleValue > count - start.unsignedIntegerValue
+            || start.doubleValue != start.unsignedIntegerValue
+            || length.doubleValue != length.unsignedIntegerValue) return;
+    NSRange range = NSMakeRange(start.unsignedIntegerValue, length.unsignedIntegerValue);
+    if ([kind isEqualToString:@"selection"])
+    {
+        BOOL shouldHandle = self.shouldHandleBoundsChange;
+        self.shouldHandleBoundsChange = NO;
+        self.editor.selectedRange = range;
+        [self.editor scrollRangeToVisible:range];
+        self.shouldHandleBoundsChange = shouldHandle;
+        return;
+    }
+    if (![kind isEqualToString:@"replace"] || ![body[@"expected"] isKindOfClass:NSString.class]
+            || ![body[@"replacement"] isKindOfClass:NSString.class]
+            || ![[self.editor.string substringWithRange:range] isEqualToString:body[@"expected"]]) return;
+    self.applyingPreviewEdit = YES;
+    [self.editor insertText:body[@"replacement"] replacementRange:range];
+    self.applyingPreviewEdit = NO;
+    self.previewInteractionSequence++;
+    self.previewEditingMarkdown = [self.editor.string copy];
+    self.previewCaret = @(range.location + [body[@"replacement"] length]);
+    // Preview editing remains live when the source editor uses manual rendering.
+    [self.renderer parseAndRenderLater];
 }
 
 #pragma mark - MPRendererDataSource
@@ -1012,9 +1143,10 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
     }
     if (self.printing)
         return;
-    if (self.alreadyRenderingInWeb)
+    if (self.alreadyRenderingInWeb || self.previewIsComposing || self.previewDefersRendering)
     {
         self.pendingPreviewHTML = html;
+        self.pendingPreviewMarkdown = renderer.currentMarkdown;
         return;
     }
     [self loadPreviewHTML:html];
@@ -1022,6 +1154,17 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 
 - (void)loadPreviewHTML:(NSString *)html
 {
+    NSString *source = self.pendingPreviewMarkdown ?: self.renderer.currentMarkdown ?: @"";
+    self.pendingPreviewMarkdown = nil;
+    if (![source isEqualToString:self.editor.string])
+    {
+        [self.renderer parseAndRenderNow];
+        return;
+    }
+    self.loadingPreviewMarkdown = source;
+    self.previewInteractionPrepared = NO;
+    self.previewSourceOffset = self.renderer.currentSourceOffset;
+    self.previewRendersTOC = self.renderer.currentRendersTOC;
     NSURL *baseURL = self.fileURL ?: self.preferences.htmlDefaultDirectoryUrl;
     BOOL canUpdate = !self.forcePreviewNavigation && self.isPreviewReady
         && [self.currentBaseUrl isEqual:baseURL];
@@ -1042,19 +1185,39 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
         [NSString stringWithFormat:@"<head><base href=\"%@\">", base]];
     if (canUpdate)
     {
+        NSString *token = NSUUID.UUID.UUIDString;
         NSUInteger generation = self.previewGeneration;
         __weak MPDocument *weakSelf = self;
         [self.preview callAsyncJavaScript:
-            @"return window.__macdownUpdate ? window.__macdownUpdate(html, resources) : false;"
-            arguments:@{@"html": html, @"resources": NSBundle.mainBundle.resourceURL.absoluteString}
-            inFrame:nil inContentWorld:WKContentWorld.pageWorld
+            @"if(window.__macdownPreviewMatches && !window.__macdownPreviewMatches(previous, sequence)) return 'stale';"
+             "if(!window.__macdownUpdate || !window.__macdownUpdate(html, resources)) return false;"
+             "window.__macdownPreviewPrepare?.(source, token, offset, toc, caret); return true;"
+            arguments:@{@"html": html, @"resources": NSBundle.mainBundle.resourceURL.absoluteString,
+                @"previous": self.previewEditingMarkdown ?: @"", @"sequence": @(self.previewInteractionSequence),
+                @"source": source, @"token": token, @"offset": @(self.previewSourceOffset),
+                @"toc": @(self.previewRendersTOC), @"caret": self.previewCaret ?: NSNull.null}
+            inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld
             completionHandler:^(id result, NSError *error) {
                 MPDocument *doc = weakSelf;
                 if (!doc || generation != doc.previewGeneration) return;
-                if (error || ![result isKindOfClass:NSNumber.class] || ![result boolValue])
+                if ([result isKindOfClass:NSString.class] && [result isEqualToString:@"stale"])
+                {
+                    doc.alreadyRenderingInWeb = NO;
+                    doc.isPreviewReady = YES;
+                    doc.pendingPreviewHTML = nil;
+                    doc.pendingPreviewMarkdown = nil;
+                    [doc.renderer parseAndRenderNow];
+                }
+                else if (error || ![result isKindOfClass:NSNumber.class] || ![result boolValue])
                     [doc navigatePreviewHTML:html];
                 else
+                {
+                    doc.previewEditingMarkdown = source;
+                    doc.previewInteractionToken = token;
+                    doc.previewInteractionSequence = 0;
+                    doc.previewInteractionPrepared = YES;
                     [doc finishPreviewNavigation];
+                }
             }];
         return;
     }
@@ -1078,6 +1241,14 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 
 - (void)editorTextDidChange:(NSNotification *)notification
 {
+    if (!self.applyingPreviewEdit)
+    {
+        self.previewCaret = nil;
+        self.previewIsComposing = NO;
+        self.previewDefersRendering = NO;
+        self.pendingPreviewHTML = nil;
+        self.pendingPreviewMarkdown = nil;
+    }
     self.editorGeometryDirty = YES;
     if (self.needsHtml)
         [self.renderer parseAndRenderLater];
@@ -1443,6 +1614,7 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 
 - (IBAction)render:(id)sender
 {
+    self.previewDefersRendering = NO;
     // Explicit refresh must reread same-URL stylesheet/script resources too.
     self.forcePreviewNavigation = YES;
     [self.renderer parseAndRenderLater];

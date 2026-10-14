@@ -5,6 +5,7 @@
   const initialScripts = JSON.stringify(Array.from(document.scripts, s => s.outerHTML));
   const simpleShell = !document.documentElement.attributes.length && !document.body.attributes.length
     && !/\son[a-z]+\s*=/i.test(document.body.innerHTML)
+    && !document.querySelector('meta[http-equiv="Content-Security-Policy" i]')
     && !document.querySelector('iframe, object, embed, audio, video');
   const headTemplate = document.createElement('template');
   const bodyTemplate = document.createElement('template');
@@ -67,16 +68,27 @@
     }
     const anchor = oldNodes[oldEnd] || document.body.querySelector(':scope > script');
     const inserted = newNodes.slice(first, newEnd);
+    window.__macdownPreviewPatchedNodes = inserted;
     const fragment = document.createDocumentFragment();
     inserted.forEach(node => { rememberCode(node); fragment.appendChild(node); });
     for (let i = first; i < oldEnd; i++) oldNodes[i].remove();
     document.body.insertBefore(fragment, anchor);
     // Highlight only inserted content. Untouched code and images keep their DOM
     // identity and loaded state. Full export/printing still sees the whole page.
-    if (window.Prism) for (const node of inserted) {
+    let highlight = false;
+    for (const node of inserted) {
       if (node.nodeType !== Node.ELEMENT_NODE) continue;
-      if (node.matches('code[class*="language-"]')) Prism.highlightElement(node);
-      node.querySelectorAll('code[class*="language-"], [class*="language-"] code').forEach(code => Prism.highlightElement(code));
+      const codes = Array.from(node.querySelectorAll('code[class*="language-"], [class*="language-"] code'));
+      if (node.matches('code[class*="language-"]')) codes.push(node);
+      for (const code of codes) { code.setAttribute('data-macdown-highlight', ''); highlight = true; }
+    }
+    if (highlight) {
+      // Prism belongs to the page world. Execute a constant, synchronous hook
+      // there, then build the isolated source map from its final text nodes.
+      // No Markdown or user text is interpolated into executable JavaScript.
+      const script = document.createElement('script');
+      script.textContent = "document.querySelectorAll('code[data-macdown-highlight]').forEach(code => { code.removeAttribute('data-macdown-highlight'); if(window.Prism) Prism.highlightElement(code); });";
+      document.head.appendChild(script); script.remove();
     }
     bodyTemplate.innerHTML = ''; // Release unused fragment nodes immediately.
     return true;

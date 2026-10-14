@@ -6,6 +6,52 @@
 @end
 
 @implementation MPPreviewTests
+- (void)testPreviewSelectionAndEditingPreserveMarkdown
+{
+    MPDocument *document = [[MPDocument alloc] init];
+    NSString *source = @"# Café 😀\n\nHello **bold** and [link](https://example.com).";
+    XCTAssertTrue([document readFromData:[source dataUsingEncoding:NSUTF8StringEncoding]
+        ofType:@"net.daringfireball.markdown" error:NULL]);
+    [document makeWindowControllers];
+    XCTAssertNotNil(document.windowControllers.firstObject.window);
+    [document showWindows];
+    WKWebView *preview = [document valueForKey:@"preview"];
+    [self expectationForPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
+        return [[document valueForKey:@"isPreviewReady"] boolValue];
+    }] evaluatedWithObject:document handler:nil];
+    [self waitForExpectationsWithTimeout:10 handler:nil];
+    XCTestExpectation *selection = [self expectationWithDescription:@"Preview text selected"];
+    [preview callAsyncJavaScript:@"const n=document.querySelector('strong').firstChild;"
+        "const r=document.createRange();r.selectNodeContents(n);getSelection().removeAllRanges();getSelection().addRange(r);"
+        "const s=window.__macdownPreviewSelection();return s && {start:s.start,end:s.end};"
+        arguments:@{} inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:^(id result,NSError *error) {
+            XCTAssertNil(error);
+            XCTAssertEqual([result[@"start"] unsignedIntegerValue], [source rangeOfString:@"bold"].location);
+            [selection fulfill];
+        }];
+    [self waitForExpectationsWithTimeout:5 handler:nil];
+    NSTextView *editor = [document valueForKey:@"editor"];
+    [self expectationForPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
+        return NSEqualRanges(editor.selectedRange, [source rangeOfString:@"bold"]);
+    }] evaluatedWithObject:document handler:nil];
+    [self waitForExpectationsWithTimeout:5 handler:nil];
+    XCTestExpectation *edit = [self expectationWithDescription:@"Preview edit submitted"];
+    [preview callAsyncJavaScript:@"return window.__macdownPreviewReplace('better');"
+        arguments:@{} inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:^(id result,NSError *error) {
+            XCTAssertNil(error); XCTAssertTrue([result boolValue]); [edit fulfill];
+        }];
+    [self waitForExpectationsWithTimeout:5 handler:nil];
+    NSString *expected = [source stringByReplacingOccurrencesOfString:@"**bold**" withString:@"**better**"];
+    [self expectationForPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
+        return [document.markdown isEqualToString:expected];
+    }] evaluatedWithObject:document handler:nil];
+    [self waitForExpectationsWithTimeout:5 handler:nil];
+    XCTAssertTrue(document.isDocumentEdited);
+    XCTAssertEqualObjects([[NSString alloc] initWithData:[document dataOfType:@"net.daringfireball.markdown" error:NULL]
+        encoding:NSUTF8StringEncoding], expected);
+    [document close];
+}
+
 - (void)testPreviewLoadsRelativeImagesAndSupportsPrinting
 {
     NSURL *directory = [NSURL fileURLWithPath:[NSTemporaryDirectory()

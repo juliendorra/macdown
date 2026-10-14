@@ -213,6 +213,9 @@ NS_INLINE BOOL MPAreNilableStringsEqual(NSString *s1, NSString *s2)
 @property (readonly) NSArray *stylesheets;
 @property (readonly) NSArray *scripts;
 @property (copy) NSString *currentHtml;
+@property (nonatomic, copy) NSString *currentMarkdown;
+@property (nonatomic) NSUInteger currentSourceOffset;
+@property (nonatomic) BOOL currentRendersTOC;
 @property (strong) NSOperationQueue *parseQueue;
 @property (strong) NSTimer *renderTimer;
 @property NSUInteger renderGeneration;
@@ -566,6 +569,9 @@ NS_INLINE void MPFreeHTMLRenderer(hoedown_renderer *htmlRenderer)
                     if (!current || generation != current.renderGeneration)
                         return;
                     current.currentHtml = worker.currentHtml;
+                    current.currentMarkdown = worker.currentMarkdown;
+                    current.currentSourceOffset = worker.currentSourceOffset;
+                    current.currentRendersTOC = worker.currentRendersTOC;
                     current.currentLanguages = worker.currentLanguages;
                     current.extensions = extensions;
                     current.smartypants = smartypants;
@@ -610,11 +616,15 @@ NS_INLINE void MPFreeHTMLRenderer(hoedown_renderer *htmlRenderer)
           smartypants:(BOOL)smartypants frontMatter:(BOOL)hasFrontMatter TOC:(BOOL)hasTOC
 {
     [self.currentLanguages removeAllObjects];
+    self.currentMarkdown = markdown;
+    self.currentSourceOffset = 0;
+    self.currentRendersTOC = hasTOC;
     id frontMatter = nil;
     if (hasFrontMatter)
     {
         NSUInteger offset = 0;
         frontMatter = [markdown frontMatter:&offset];
+        self.currentSourceOffset = offset;
         markdown = [markdown substringFromIndex:offset];
     }
     hoedown_renderer *htmlRenderer = MPCreateHTMLRenderer(self);
