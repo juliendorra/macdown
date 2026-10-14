@@ -108,7 +108,7 @@ Markdown document, type quickly, scroll both panes, test anchor/external links,
 copy HTML, export HTML/PDF, change themes/zoom, and close while rendering.
 MathJax still requires its configured CDN connection.
 
-Local physical-memory measurements of the delivered Xcode build on Apple
+Initial physical-memory measurements of the Xcode build at `aa02bd9` on Apple
 Silicon/macOS 27 were approximately 112 MiB with a small document and 164 MiB
 with a 7,000-line (109 KiB) document,
 including the editor and its newly created WebKit content, GPU, and networking
@@ -117,6 +117,73 @@ about 24–37 MiB from the editor after settling. These are single-run observati
 not a memory limit or a leak test. The installed Intel-only legacy app could not
 run on this host, so a reduction versus legacy MacDown has not been established.
 Large documents, scripts, images, and multiple windows can use more memory.
+
+### Compare renderer changes locally without a cloud build
+
+`Scripts/rebuild-macos-local.py` uses Command Line Tools to compile the app and
+installed source pods, reusing the nibs and compiled assets from an existing app.
+It checks that interface sources, assets, project settings, dependency locks,
+and version numbers still match the resource revision. New Interface Builder
+changes require full Xcode; this tool does not compile them or run XCTest.
+Use Ruby 3.3+ with the project's installed Bundler/CocoaPods dependencies.
+
+Build both comparison apps with the same toolchain and dependency installation:
+
+```sh
+python3 Scripts/rebuild-macos-local.py \
+  --resources-app Artifacts/Validated/MacDown.app --resources-ref aa02bd9 \
+  --source-ref 51eb19b --output .build/compare/before/MacDown.app
+python3 Scripts/rebuild-macos-local.py \
+  --resources-app Artifacts/Validated/MacDown.app --resources-ref aa02bd9 \
+  --output .build/compare/after/MacDown.app
+python3 Scripts/benchmark-preview.py \
+  .build/compare/before/MacDown.app .build/compare/after/MacDown.app
+```
+
+The baseline is the previous modernized app, not the Intel-only legacy release.
+Replace resource paths/revisions together when using a newer Xcode-built app.
+Rebuilds default to the host architecture; `--universal` adds Intel/Apple Silicon.
+They are ad-hoc signed development apps, with build provenance in Info.plist.
+Do not attribute differences between an original Xcode build and a CLT rebuild
+solely to source changes: rebuild both sides for the comparison.
+
+The benchmark uses isolated preferences and generated fixtures. It reverses app
+order on alternating repetitions and records 20 edits per app/file/repetition
+after two warmups, including the 120 ms typing debounce. Latency ends when the
+expected text is in the preview DOM; it is not a screen-paint timing. It measures
+physical footprint of the app plus newly created WebKit helpers before edits,
+after edits, and after closing. Run on a quiet machine: helper attribution uses
+process differences, and summed footprints can count shared allocations.
+
+Results and logs go to `Artifacts/PreviewComparison/`. The native probe also
+checks relative images, retained image/code nodes, highlighting, task checkboxes,
+100 rapid edits publishing only the final result, custom script/inline-event
+fallback, changed code languages, asynchronous image geometry, print-operation
+creation, and closing with queued work. It compares editor heading positions
+between app variants. This complements the full Xcode test suite.
+
+The optimized preview retains its page and replaces the changed middle of its
+body, preserving unchanged prefix/suffix nodes. It uses inert template fragments
+and highlights inserted code only. Complex scripts, embedded documents, changed
+styles/script lists, and custom page shells fall back to full navigation. The
+compiled HTML template is cached, scroll geometry is invalidated by text/font/
+size changes, and closing explicitly releases the preview and pending HTML.
+
+On the local Apple Silicon/macOS 27 comparison (clang 15, SDK 14.4, two reversed
+repetitions), the final batch measured:
+
+| Fixture | Median typing-to-DOM latency, before → after | RAM after editing, before → after |
+| --- | --- | --- |
+| 10 sections, 1.1 KiB | 143 → 130 ms | 135 → 109 MiB |
+| 1,000 sections, 97 KiB / about 7,000 lines | 268 → 200 ms | 214 → 141 MiB |
+
+The large-file latency fell about 25%, including the intentional typing delay.
+RAM includes the app and its new WebKit helpers after 22 edits. Memory varied
+more between earlier pilots, and initial-load memory rose slightly in the final
+comparison; these are phase-specific observations, not guaranteed reductions.
+All eight runs passed the preview checks and matched editor heading positions.
+No GitHub macOS minutes were used for this batch. Full raw results and the local
+app are generated artifacts, not files required to run CI.
 
 ### Translation
 
