@@ -20,9 +20,12 @@
         return [[document valueForKey:@"isPreviewReady"] boolValue];
     }] evaluatedWithObject:document handler:nil];
     [self waitForExpectationsWithTimeout:10 handler:nil];
+    [NSApp activateIgnoringOtherApps:YES];
+    [preview.window makeKeyAndOrderFront:nil];
+    [preview.window makeFirstResponder:preview];
     XCTestExpectation *selection = [self expectationWithDescription:@"Preview text selected"];
     [preview callAsyncJavaScript:@"const n=document.querySelector('strong').firstChild;"
-        "const r=document.createRange();r.selectNodeContents(n);getSelection().removeAllRanges();getSelection().addRange(r);"
+        "const r=document.createRange();r.selectNodeContents(n);document.body.focus();getSelection().removeAllRanges();getSelection().addRange(r);"
         "const s=window.__macdownPreviewSelection();return s && {start:s.start,end:s.end};"
         arguments:@{} inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:^(id result,NSError *error) {
             XCTAssertNil(error);
@@ -35,13 +38,11 @@
         return NSEqualRanges(editor.selectedRange, [source rangeOfString:@"bold"]);
     }] evaluatedWithObject:document handler:nil];
     [self waitForExpectationsWithTimeout:5 handler:nil];
-    XCTestExpectation *edit = [self expectationWithDescription:@"Preview edit submitted"];
-    [preview callAsyncJavaScript:@"return window.__macdownPreviewReplace('better');"
-        arguments:@{} inFrame:nil inContentWorld:WKContentWorld.defaultClientWorld completionHandler:^(id result,NSError *error) {
-            XCTAssertNil(error); XCTAssertTrue([result boolValue]); [edit fulfill];
-        }];
-    [self waitForExpectationsWithTimeout:5 handler:nil];
-    NSString *expected = [source stringByReplacingOccurrencesOfString:@"**bold**" withString:@"**better**"];
+    // Exercise WebKit's native input path and AppKit's editing event lifecycle.
+    [NSApp sendEvent:[NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint modifierFlags:0
+        timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:preview.window.windowNumber context:nil
+        characters:@"B" charactersIgnoringModifiers:@"b" isARepeat:NO keyCode:11]];
+    NSString *expected = [source stringByReplacingOccurrencesOfString:@"**bold**" withString:@"**B**"];
     // AppKit updates the document's change count when the undo group closes,
     // after the text storage has already received the preview edit.
     [self expectationForPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
