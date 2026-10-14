@@ -48,6 +48,11 @@ static void require(BOOL condition, NSString *message) { if (!condition) { NSLog
     self.deadline = NSProcessInfo.processInfo.systemUptime + 15;
     [self ready:^{ [self next]; }];
 }
+- (void)waitForSelection:(NSRange)range completion:(dispatch_block_t)completion {
+    require(NSProcessInfo.processInfo.systemUptime < self.deadline, @"Preview selection did not mirror in editor");
+    if (NSEqualRanges(self.editor.selectedRange, range)) { completion(); return; }
+    [self after:0.02 run:^{ [self waitForSelection:range completion:completion]; }];
+}
 - (void)next {
     if (self.step == self.steps.count) {
         [self.document close];
@@ -85,13 +90,15 @@ static void require(BOOL condition, NSString *message) { if (!condition) { NSLog
         completionHandler:^(NSDocument *document, BOOL wasOpen, NSError *error) {
             require(document && !error, error.description ?: @"Cannot open fixture");
             self.document = document; self.preview = [document valueForKey:@"preview"]; self.editor = [document valueForKey:@"editor"];
+            [NSApp activateIgnoringOtherApps:YES];
+            [self.preview.window makeKeyAndOrderFront:nil];
+            [self.preview.window makeFirstResponder:self.preview];
             self.steps = @[
                 ^{
                     [self select:@"strong" start:0 length:4 done:^(id result) {
                         NSRange expected = [self.editor.string rangeOfString:@"bold"];
                         require(result && [result[@"start"] unsignedIntegerValue]==expected.location && [result[@"end"] unsignedIntegerValue]==NSMaxRange(expected), @"Incorrect bold source map");
-                        [self after:0.15 run:^{
-                            require(NSEqualRanges(self.editor.selectedRange, expected), @"Preview selection did not mirror in editor");
+                        [self waitForSelection:expected completion:^{
                             [self pass:@"precise_selection_and_inactive_editor_highlight"];
                         }];
                     }];

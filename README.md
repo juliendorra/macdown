@@ -90,8 +90,9 @@ python3 Scripts/check-preview-editing.py Artifacts/MacDown.app
 They use temporary documents and isolated preferences. They cover native
 keyboard input, Japanese text composition, undo, saving, Unicode, formatting,
 code indentation, tables, empty documents, and typing during preview refreshes.
-GUI checks need a macOS desktop session. The launcher stops before opening an
-app if it detects a restricted sandbox.
+GUI checks need an awake, unlocked macOS desktop session. The launcher stops
+before opening an app if it detects a restricted sandbox, a sleeping display,
+or a locked session.
 
 For manual checks, try a large document, fast typing, scrolling, links, themes,
 zoom, HTML/PDF export, and closing a document while it renders. MathJax uses its
