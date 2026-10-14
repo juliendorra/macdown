@@ -34,7 +34,8 @@ xcodebuild test -workspace MacDown.xcworkspace -scheme MacDown \
   CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY=-
 app="$work/DerivedData/Build/Products/Release/MacDown.app"
 # The hosted test bundle is embedded by Xcode for execution, not distribution.
-rm -rf "$app/Contents/PlugIns/MacDownTests.xctest"
+rm -rf "$app/Contents/PlugIns/MacDownTests.xctest" \
+       "$app/Contents/PlugIns/MacDownTests.xctest.dSYM"
 # Xcode also injects its test runtime into the host. None belongs in the app
 # distributed to users; removing just the .xctest bundle leaves these behind.
 for runtime in "$app"/Contents/Frameworks/{XCT*,XCUnit,XCUIAutomation,Testing,_Testing_*}.framework \

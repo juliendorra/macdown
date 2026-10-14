@@ -13,6 +13,7 @@ for resource in ['Base.lproj/MPDocument.nib', 'Prism/components/prism-core.min.j
     assert (app / 'Contents/Resources' / resource).exists(), resource
 assert (app / 'Contents/SharedSupport/bin/macdown').is_file()
 assert not (app / 'Contents/PlugIns/MacDownTests.xctest').exists(), 'Embedded test bundle'
+assert not any(app.rglob('*.dSYM')), 'Embedded debug symbols'
 for item in (app / 'Contents/Frameworks').iterdir():
     assert not item.name.startswith(('XCT', 'XCUnit', 'XCUIAutomation', 'Testing.', '_Testing_', 'libXCTest')), item
 print(f"Verified MacDown {info['CFBundleShortVersionString']} ({info['CFBundleVersion']}).")
