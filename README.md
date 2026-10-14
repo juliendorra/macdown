@@ -1,244 +1,166 @@
-# MacDown
+# MacDown, modernized
 
-[![](https://img.shields.io/github/release/MacDownApp/macdown.svg)](http://macdown.uranusjr.com/download/latest/)
-![Total downloads](https://img.shields.io/github/downloads/MacDownApp/macdown/latest/total.svg)
+This is a modernized version of [MacDown](https://github.com/MacDownApp/macdown),
+the open source Markdown editor for macOS. It targets macOS 13 or later and
+builds for Apple Silicon and Intel.
 
+The changes were made through repeated rounds of optimization and testing:
+measure rendering speed and memory use, change the code, run checks, and compare
+again. The work keeps MacDown's editor, preferences, and document features while
+updating the app for current macOS.
 
-MacDown is an open source Markdown editor for macOS, released under the MIT License. The author stole the idea from [Chen Luo](https://twitter.com/chenluois)’s [Mou](http://mouapp.com) so that people can make crappy clones.
+## Changes in this version
 
-Visit the [project site](http://macdown.uranusjr.com/) for more information, or download [MacDown.app.zip](http://macdown.uranusjr.com/download/latest/) directly from the [latest releases](https://github.com/MacDownApp/macdown/releases/latest) page.
+- The preview uses WKWebView. Ordinary edits update the existing page and keep
+  unchanged images and code blocks in place.
+- Markdown parsing and syntax highlighting run off the main thread. Rapid edits
+  cancel older work instead of building up a queue.
+- You can edit rendered text in the preview. Selecting preview text also selects
+  its Markdown in the source pane.
+- The build pins its dependencies, shares version numbers, and has an optional
+  GitHub macOS job. Pushes do not start a macOS build.
 
-## Install
+## Get the app
 
-[Download](http://macdown.uranusjr.com/download/latest/), unzip, and drag the app to Applications folder. MacDown is also available through [Homebrew Cask](https://caskroom.github.io/):
+This fork does not have a published release yet. Build it locally using the
+instructions below, or run the optional Mac build in
+[GitHub Actions](https://github.com/juliendorra/macdown/actions/workflows/ci.yml).
+Select the branch you want to build and enable **Build and test the universal
+Mac app**. Download the resulting `MacDown-macOS-*` artifact, unzip the app, and
+move it to Applications.
 
-    brew install --cask macdown
+The app is signed locally without an Apple developer certificate and is not
+notarized. The original project's releases and Homebrew package do not contain
+this fork's changes.
 
-## Screenshot
+## Editing in the preview
 
-![screenshot](assets/screenshot.png)
+Click rendered text and type. Edits preserve the surrounding Markdown formatting
+and use the document's normal undo, save, and autosave behavior. Preview
+selections highlight the matching source without moving keyboard focus.
 
-## License
+Pasted text stays plain text. Command-Z undoes edits; Shift-Command-Z redoes them.
+Return starts a paragraph or continues a list. Shift-Return inserts a Markdown
+line break. Command-click opens a link; an ordinary click edits its label.
 
-MacDown is released under the terms of MIT License. You may find the content of the license [here](http://opensource.org/licenses/MIT), or inside the `LICENSE` directory.
+Some generated content, raw HTML, and selections across formatting boundaries
+cannot be mapped safely to Markdown. The preview asks you to edit those in the
+source pane. An outdated preview cannot overwrite newer source text.
 
-You may find full text of licenses about third-party components in the `LICENSE` directory, or the **About MacDown** panel in the application.
+## Build locally
 
-The following editor themes and CSS files are extracted from [Mou](http://mouapp.com), courtesy of Chen Luo:
-
-* Mou Fresh Air
-* Mou Fresh Air+
-* Mou Night
-* Mou Night+
-* Mou Paper
-* Mou Paper+
-* Tomorrow
-* Tomorrow Blue
-* Tomorrow+
-* Writer
-* Writer+
-* Clearness
-* Clearness Dark
-* GitHub
-* GitHub2
-
-## Development
-
-### Editing in the preview
-
-Click rendered text to place the caret and type directly. Preview selections
-select the corresponding Markdown range in the source pane without moving
-keyboard focus away from the preview. Edits use the document's normal undo,
-save, and autosave machinery and preserve surrounding Markdown formatting.
-Pasted text stays plain text; Command-Z and Shift-Command-Z undo and redo.
-Return starts a paragraph or continues a list, while Shift-Return inserts a
-Markdown line break. Command-click opens links; an ordinary click edits their
-labels.
-
-Generated content, arbitrary HTML, and selections crossing an incomplete
-formatting boundary may not have a safe text mapping. The preview shows a
-message directing those edits to the Markdown pane rather than guessing a
-source range. Edits from an outdated preview cannot overwrite newer source.
-
-The mutation handler and source map run in an isolated WebKit content world,
-separate from scripts embedded in Markdown. A map belongs to one rendered
-source revision and uses UTF-16 offsets matching NSTextView. Optimistic local
-updates let rapid typing proceed during the existing rendering debounce.
-Maps are built on interaction, and a rendered edit first maps only its changed
-block. Normal source typing avoids document-wide selection-map allocations;
-rapid preview typing reuses its known caret until a new selection needs a map.
-
-Run the focused native checks against an already built development app:
-
-```sh
-python3 Scripts/check-preview-editing.py .build/PreviewEditing/MacDown.app
-```
-
-The checks use isolated preferences and temporary documents, exercise real
-native keyboard input and Japanese composition, and cover selection, undo,
-Unicode, literal pasting, stale revisions, and invalid mutation messages.
-Run GUI checks with desktop access: their launcher detects a restricted
-sandbox before starting AppKit, avoiding a LaunchServices abort/crash dialog.
-Portable source-projection checks are included in `Scripts/check.sh`.
-
-### Requirements and local builds
-
-This modernization targets macOS 13 or later on Apple Silicon and Intel,
-including current macOS. It preserves the AppKit editor and document features
-and uses WKWebView for previews, scrolling, printing, and HTML text counting.
-
-Install full Xcode (Command Line Tools alone cannot compile this app's Interface
-Builder documents), Ruby 3.3+, and Bundler 2.4.22:
+Install full Xcode, Ruby 3.3 or later, and Bundler 2.4.22. Command Line Tools alone
+cannot compile the app's Interface Builder documents.
 
 ```sh
 gem install bundler -v 2.4.22
-Scripts/check.sh         # portable parser and project checks, no Apple CI
-Scripts/check-macos-local.sh # AppKit toolbar checks with CLT and bounds sanitizers
-Scripts/build-macos.sh   # dependencies, native tests, universal app, signature
+Scripts/check.sh
+Scripts/check-macos-local.sh
+Scripts/build-macos.sh
 open Artifacts/MacDown.app
 ```
 
-The build produces `Artifacts/MacDown.app`, `Artifacts/MacDown-macOS.zip`, and an
-XCTest result bundle. The default signature is ad hoc for local use; it is not
-notarized. `CODESIGN_IDENTITY` can select an existing local identity. This flow
-uses the same local packaging and explicit Apple-build pattern as Mavica Copy,
-Padipop, and Ripmix. It does not publish an App Store release.
+The build installs the locked dependencies, runs the native tests, and produces
+a universal app in one Xcode invocation. Outputs are `Artifacts/MacDown.app`,
+`Artifacts/MacDown-macOS.zip`, and the XCTest result bundle. Set
+`CODESIGN_IDENTITY` to use an existing signing identity.
 
 For development, run `Scripts/setup.sh` and open `MacDown.xcworkspace`. The
-checked-in GitHub stylesheet needs no npm step during app builds.
+checked-in GitHub stylesheet needs no npm step during an app build.
 
-### CI and macOS minutes
+Version and build number are stored in `Tools/version.txt` and
+`Tools/build-number.txt`. The app and command-line tool use the same values.
 
-Pushes to the default branch and pull requests run inexpensive Linux checks.
-The **Check MacDown and optional Mac app** workflow runs a macOS job only when
-manually dispatched with `apple_build=true`. The default is portable checks only.
-The Mac job waits for those checks, caches dependencies, tests and builds the
-universal app in one Xcode invocation, and uploads the app and test results for
-three days. Superseded validation cancels, and a 20-minute timeout bounds the
-single macOS job. There are no automatic macOS push/PR builds or build matrix.
+## Tests and performance
 
-Batch changes, inspect runs for the exact commit, and dispatch the Apple job once
-when needed. Do not rerun an already successful revision merely to package it.
+`Scripts/check.sh` runs the portable parser, source-selection, and project
+checks. `Scripts/check-macos-local.sh` checks the AppKit toolbar with Command
+Line Tools. `Scripts/build-macos.sh` runs the full XCTest suite with Xcode.
 
-Version and build number live in `Tools/version.txt` and `Tools/build-number.txt`.
-The app and CLI use the same values in local and CI builds. For a new requested
-TestFlight/App Store release, increment both values before CI and verify the
-archived pair before uploading.
+The local preview checks run against an already built development app:
 
-### Updating
+```sh
+python3 Scripts/check-preview-editing.py Artifacts/MacDown.app
+```
 
-Sparkle 2 replaces the Intel-only legacy updater. Local builds leave update
-checking disabled until a distributor supplies its own `SUFeedURL` and
-`SUPublicEDKey` in the app's Info.plist. Do not reuse the old upstream DSA key or
-feed for a fork. A beta feed can optionally be configured with `SUBetaFeedURL`.
+They use temporary documents and isolated preferences. They cover native
+keyboard input, Japanese text composition, undo, saving, Unicode, formatting,
+code indentation, tables, empty documents, and typing during preview refreshes.
+GUI checks need a macOS desktop session. The launcher stops before opening an
+app if it detects a restricted sandbox.
 
-### Performance and regression checks
+For manual checks, try a large document, fast typing, scrolling, links, themes,
+zoom, HTML/PDF export, and closing a document while it renders. MathJax uses its
+configured CDN connection.
 
-Markdown parsing and syntax highlighting debounce edits, cancel queued work,
-and discard stale results. Parser state stays off the main thread; AppKit state
-is read on the main thread. Preview loads retain only the newest pending HTML,
-scroll messages coalesce, and document close invalidates pending callbacks.
+### Compare changes without a cloud build
 
-Native tests cover rapid edits, cancellation, relative preview images, and
-printing alongside the existing test suite. For manual review, open a large
-Markdown document, type quickly, scroll both panes, test anchor/external links,
-copy HTML, export HTML/PDF, change themes/zoom, and close while rendering.
-MathJax still requires its configured CDN connection.
+`Scripts/rebuild-macos-local.py` compiles the app and installed source
+dependencies with Command Line Tools. It reuses compiled nibs and assets from
+an existing app after checking that their source files, project settings,
+dependency locks, and versions match. Interface changes need full Xcode.
+This local rebuild does not run XCTest.
 
-Initial physical-memory measurements of the Xcode build at `aa02bd9` on Apple
-Silicon/macOS 27 were approximately 112 MiB with a small document and 164 MiB
-with a 7,000-line (109 KiB) document,
-including the editor and its newly created WebKit content, GPU, and networking
-processes. Both previews rendered successfully. Closing the document released
-about 24–37 MiB from the editor after settling. These are single-run observations,
-not a memory limit or a leak test. The installed Intel-only legacy app could not
-run on this host, so a reduction versus legacy MacDown has not been established.
-Large documents, scripts, images, and multiple windows can use more memory.
-
-### Compare renderer changes locally without a cloud build
-
-`Scripts/rebuild-macos-local.py` uses Command Line Tools to compile the app and
-installed source pods, reusing the nibs and compiled assets from an existing app.
-It checks that interface sources, assets, project settings, dependency locks,
-and version numbers still match the resource revision. New Interface Builder
-changes require full Xcode; this tool does not compile them or run XCTest.
-Use Ruby 3.3+ with the project's installed Bundler/CocoaPods dependencies.
-
-Build both comparison apps with the same toolchain and dependency installation:
+Build both revisions with the same compiler and dependencies. Supply the app
+and source revision that produced the compiled resources:
 
 ```sh
 python3 Scripts/rebuild-macos-local.py \
-  --resources-app Artifacts/Validated/MacDown.app --resources-ref aa02bd9 \
-  --source-ref 51eb19b --output .build/compare/before/MacDown.app
+  --resources-app /path/to/existing/MacDown.app --resources-ref RESOURCE_COMMIT \
+  --source-ref BEFORE_COMMIT --output .build/compare/before/MacDown.app
 python3 Scripts/rebuild-macos-local.py \
-  --resources-app Artifacts/Validated/MacDown.app --resources-ref aa02bd9 \
+  --resources-app /path/to/existing/MacDown.app --resources-ref RESOURCE_COMMIT \
   --output .build/compare/after/MacDown.app
 python3 Scripts/benchmark-preview.py \
   .build/compare/before/MacDown.app .build/compare/after/MacDown.app
 ```
 
-The baseline is the previous modernized app, not the Intel-only legacy release.
-Replace resource paths/revisions together when using a newer Xcode-built app.
-Rebuilds default to the host architecture; `--universal` adds Intel/Apple Silicon.
-They are ad-hoc signed development apps, with build provenance in Info.plist.
-Do not attribute differences between an original Xcode build and a CLT rebuild
-solely to source changes: rebuild both sides for the comparison.
+Local rebuilds use the host architecture unless you add `--universal`.
+The benchmark reverses app order between runs, records edit latency after
+warmup, and measures the app plus its new WebKit helper processes. It also
+checks images, highlighting, script behavior, scrolling, printing, and closing.
+Run it on a quiet machine; shared memory and other processes affect readings.
 
-The benchmark uses isolated preferences and generated fixtures. It reverses app
-order on alternating repetitions and records 20 edits per app/file/repetition
-after two warmups, including the 120 ms typing debounce. Latency ends when the
-expected text is in the preview DOM; it is not a screen-paint timing. It measures
-physical footprint of the app plus newly created WebKit helpers before edits,
-after edits, and after closing. Run on a quiet machine: helper attribution uses
-process differences, and summed footprints can count shared allocations.
+In comparisons of earlier and later revisions of this fork, a roughly
+7,000-line document went from 268 ms to 200 ms median edit-to-preview latency.
+Measured memory after edits went from 214 MiB to 141 MiB. With preview editing
+added, a later single run measured 199 ms and 155 MiB. The tests used Apple
+Silicon, macOS 27, clang 15, and SDK 14.4.
 
-Results and logs go to `Artifacts/PreviewComparison/`. The native probe also
-checks relative images, retained image/code nodes, highlighting, task checkboxes,
-100 rapid edits publishing only the final result, custom script/inline-event
-fallback, changed code languages, asynchronous image geometry, print-operation
-creation, and closing with queued work. It compares editor heading positions
-between app variants. This complements the full Xcode test suite.
+These figures include the 120 ms typing delay and end at DOM readiness, not
+screen paint. Memory varies by document and stage of use. The original
+Intel-only MacDown could not run on the test machine, so these numbers do not
+establish a reduction against that release.
 
-The optimized preview retains its page and replaces the changed middle of its
-body, preserving unchanged prefix/suffix nodes. It uses inert template fragments
-and highlights inserted code only. Complex scripts, embedded documents, changed
-styles/script lists, and custom page shells fall back to full navigation. The
-compiled HTML template is cached, scroll geometry is invalidated by text/font/
-size changes, and closing explicitly releases the preview and pending HTML.
-Explicit Render/Refresh keeps a full reload so edited stylesheet files are reread.
+Selection maps are built when the preview is used. After an edit, the app first
+maps the changed block and reuses the known caret while typing. Ordinary source
+edits avoid rebuilding a document-wide selection map. The editing bridge runs
+in an isolated WebKit content world, separate from scripts in Markdown.
 
-On the local Apple Silicon/macOS 27 comparison (clang 15, SDK 14.4, two reversed
-repetitions), the final batch measured:
+## GitHub builds
 
-| Fixture | Median typing-to-DOM latency, before → after | RAM after editing, before → after |
-| --- | --- | --- |
-| 10 sections, 1.1 KiB | 143 → 130 ms | 135 → 109 MiB |
-| 1,000 sections, 97 KiB / about 7,000 lines | 268 → 200 ms | 214 → 141 MiB |
+Pushes and pull requests run Linux checks. The macOS job runs only when the
+workflow is started manually with the Mac build option enabled. It waits for
+the portable checks, caches dependencies, and tests and builds the universal
+app once. The job has a 20-minute timeout. Build artifacts are kept for three
+days.
 
-The large-file latency fell about 25%, including the intentional typing delay.
-RAM includes the app and its new WebKit helpers after 22 edits. Memory varied
-more between earlier pilots, and initial-load memory rose slightly in the final
-comparison; these are phase-specific observations, not guaranteed reductions.
-All eight runs passed the preview checks and matched editor heading positions.
-No GitHub macOS minutes were used for this batch. Full raw results and the local
-app are generated artifacts, not files required to run CI.
+Batch fixes and run the cheaper checks first. Check the results for the exact
+commit before starting another Mac build.
 
-### Translation
+## Updates
 
-Please help translation on [Transifex](https://www.transifex.com/macdown/macdown/).
+Sparkle 2 is included. Automatic updates stay disabled until a distributor
+supplies its own `SUFeedURL` and `SUPublicEDKey` in the app's Info.plist. Do not
+use the original project's update feed or signing key for this fork.
 
-![Transifex translation percentage](https://www.transifex.com/projects/p/macdown/resource/macdownxliff/chart/image_png/)
+## License and credits
 
-## Discussion
+MacDown is released under the MIT License. This fork builds on the original
+[MacDown project](https://github.com/MacDownApp/macdown), inspired by
+[Mou](http://mouapp.com). Some bundled themes and styles also come from Mou.
+Copyright notices and third-party licenses are in [LICENSE](LICENSE).
 
-[![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/MacDownApp/macdown)
-
-Join our [Gitter channel](https://gitter.im/MacDownApp/macdown) if you have any problems with MacDown. Any suggestions are welcomed, too!
-
-You can also [file an issue directly](https://github.com/MacDownApp/macdown/issues/new) on GitHub if you prefer so. But please, **search first to make sure no-one has reported the same issue already** before opening one yourself. MacDown does not update in your computer immediately when we make changes, so something you experienced might be known, or even fixed in the development version.
-
-MacDown depends a lot on other open source projects, such as [Hoedown](https://github.com/hoedown/hoedown) for Markdown-to-HTML rendering, [Prism](http://prismjs.com) for syntax highlighting (in code blocks), and [PEG Markdown Highlight](https://github.com/ali-rantakari/peg-markdown-highlight) for editor highlighting. If you find problems when using those particular features, you can also consider reporting them directly to upstream projects as well as to MacDown’s issue tracker. I will do what I can if you report it here, but sometimes it can be more beneficial to interact with them directly.
-
-## Tipping
-
-If you find MacDown suitable for your needs, please consider [giving me a tip through PayPal](http://macdown.uranusjr.com/faq/#donation). Or, if you prefer to buy me a drink *personally* instead, just [send me a tweet](https://twitter.com/uranusjr) when you visit [Taipei, Taiwan](http://en.wikipedia.org/wiki/Taipei), where I live. I look forward to meeting you!
+Translations are maintained through the original project's
+[Transifex page](https://www.transifex.com/macdown/macdown/). Report issues with
+this version in [this fork](https://github.com/juliendorra/macdown/issues).
