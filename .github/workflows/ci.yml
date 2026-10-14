@@ -1,0 +1,54 @@
+name: Check MacDown and optional Mac app
+run-name: "MacDown · ${{ github.ref_name }} · ${{ inputs.apple_build && 'Mac app' || 'portable checks' }}"
+on:
+  workflow_dispatch:
+    inputs:
+      apple_build:
+        description: Build and test the universal Mac app (uses macOS minutes)
+        type: boolean
+        default: false
+  push:
+    branches: [master, main]
+    paths: ['MacDown/**', 'MacDownTests/**', 'Dependency/**', 'Tests/**', 'Scripts/**', 'Tools/**', 'MacDown.xcodeproj/**', 'macdown-cmd/**', 'Gemfile*', 'Podfile*', '.github/workflows/**']
+  pull_request:
+    paths: ['MacDown/**', 'MacDownTests/**', 'Dependency/**', 'Tests/**', 'Scripts/**', 'Tools/**', 'MacDown.xcodeproj/**', 'macdown-cmd/**', 'Gemfile*', 'Podfile*', '.github/workflows/**']
+permissions:
+  contents: read
+concurrency:
+  group: macdown-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  portable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - run: Scripts/check.sh
+  macos:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.apple_build }}
+    needs: portable
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+      - uses: actions/cache@v4
+        with:
+          path: |
+            Pods
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods
+          key: macdown-pods-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Podfile.lock', 'Podfile') }}
+      - run: Scripts/build-macos.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MacDown-macOS-${{ github.run_number }}
+          path: |
+            Artifacts/MacDown-macOS.zip
+            Artifacts/MacDown.xcresult
+          if-no-files-found: warn
+          retention-days: 3

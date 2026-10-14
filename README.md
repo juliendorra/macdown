@@ -2,10 +2,9 @@
 
 [![](https://img.shields.io/github/release/MacDownApp/macdown.svg)](http://macdown.uranusjr.com/download/latest/)
 ![Total downloads](https://img.shields.io/github/downloads/MacDownApp/macdown/latest/total.svg)
-[![Build Status](https://travis-ci.org/MacDownApp/macdown.svg?branch=master)](https://travis-ci.org/MacDownApp/macdown)
 
 
-MacDown is an open source Markdown editor for OS X, released under the MIT License. The author stole the idea from [Chen Luo](https://twitter.com/chenluois)’s [Mou](http://mouapp.com) so that people can make crappy clones.
+MacDown is an open source Markdown editor for macOS, released under the MIT License. The author stole the idea from [Chen Luo](https://twitter.com/chenluois)’s [Mou](http://mouapp.com) so that people can make crappy clones.
 
 Visit the [project site](http://macdown.uranusjr.com/) for more information, or download [MacDown.app.zip](http://macdown.uranusjr.com/download/latest/) directly from the [latest releases](https://github.com/MacDownApp/macdown/releases/latest) page.
 
@@ -45,39 +44,68 @@ The following editor themes and CSS files are extracted from [Mou](http://mouapp
 
 ## Development
 
-### Requirements
+### Requirements and local builds
 
-If you wish to build MacDown yourself, you will need the following components/tools:
+This modernization targets macOS 13 or later on Apple Silicon and Intel,
+including current macOS. It preserves the AppKit editor and document features
+and uses WKWebView for previews, scrolling, printing, and HTML text counting.
 
-* OS X SDK (10.14 or later)
-* Git
-* [Bundler](http://bundler.io)
+Install full Xcode (Command Line Tools alone cannot compile this app's Interface
+Builder documents), Ruby 3.3+, and Bundler 2.4.22:
 
-> Note: Old versions of CocoaPods are not supported. Please use Bundler to execute CocoaPods, or make sure your CocoaPods is later than shown in `Gemfile.lock`.
+```sh
+gem install bundler -v 2.4.22
+Scripts/check.sh         # portable parser and project checks, no Apple CI
+Scripts/build-macos.sh   # dependencies, native tests, universal app, signature
+open Artifacts/MacDown.app
+```
 
-> Note: The Command Line Tools (CLT) should be unnecessary. If you failed to compile without it, please install CLT with
->
->     xcode-select --install
->
-> and report back.
+The build produces `Artifacts/MacDown.app`, `Artifacts/MacDown-macOS.zip`, and an
+XCTest result bundle. The default signature is ad hoc for local use; it is not
+notarized. `CODESIGN_IDENTITY` can select an existing local identity. This flow
+uses the same local packaging and explicit Apple-build pattern as Mavica Copy,
+Padipop, and Ripmix. It does not publish an App Store release.
 
-An appropriate SDK should be bundled with Xcode 5 or later versions.
+For development, run `Scripts/setup.sh` and open `MacDown.xcworkspace`. The
+checked-in GitHub stylesheet needs no npm step during app builds.
 
-### Environment Setup
+### CI and macOS minutes
 
-After cloning the repository, run the following commands inside the repository root (directory containing this `README.md` file):
+Pushes to the default branch and pull requests run inexpensive Linux checks.
+The **Check MacDown and optional Mac app** workflow runs a macOS job only when
+manually dispatched with `apple_build=true`. The default is portable checks only.
+The Mac job waits for those checks, caches dependencies, tests and builds the
+universal app in one Xcode invocation, and uploads the app and test results for
+three days. Superseded validation cancels, and a 20-minute timeout bounds the
+single macOS job. There are no automatic macOS push/PR builds or build matrix.
 
-    git submodule update --init
-    bundle install
-    bundle exec pod install
-    make -C Dependency/peg-markdown-highlight
+Batch changes, inspect runs for the exact commit, and dispatch the Apple job once
+when needed. Do not rerun an already successful revision merely to package it.
 
-and open `MacDown.xcworkspace` in Xcode. The first command initialises the dependency submodule(s) used in MacDown; the second one installs dependencies managed by CocoaPods.
+Version and build number live in `Tools/version.txt` and `Tools/build-number.txt`.
+The app and CLI use the same values in local and CI builds. For a new requested
+TestFlight/App Store release, increment both values before CI and verify the
+archived pair before uploading.
 
-Refer to the official guides of Git and CocoaPods if you need more instructions. If you run into build issues later on, try running the following commands to update dependencies:
+### Updating
 
-    git submodule update
-    bundle exec pod install
+Sparkle 2 replaces the Intel-only legacy updater. Local builds leave update
+checking disabled until a distributor supplies its own `SUFeedURL` and
+`SUPublicEDKey` in the app's Info.plist. Do not reuse the old upstream DSA key or
+feed for a fork. A beta feed can optionally be configured with `SUBetaFeedURL`.
+
+### Performance and regression checks
+
+Markdown parsing and syntax highlighting debounce edits, cancel queued work,
+and discard stale results. Parser state stays off the main thread; AppKit state
+is read on the main thread. Preview loads retain only the newest pending HTML,
+scroll messages coalesce, and document close invalidates pending callbacks.
+
+Native tests cover rapid edits, cancellation, relative preview images, and
+printing alongside the existing test suite. For manual review, open a large
+Markdown document, type quickly, scroll both panes, test anchor/external links,
+copy HTML, export HTML/PDF, change themes/zoom, and close while rendering.
+MathJax still requires its configured CDN connection.
 
 ### Translation
 
