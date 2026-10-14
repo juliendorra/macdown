@@ -20,6 +20,11 @@
         return [[document valueForKey:@"isPreviewReady"] boolValue];
     }] evaluatedWithObject:document handler:nil];
     [self waitForExpectationsWithTimeout:10 handler:nil];
+    // XCTest waits run inside the app's event loop. Own this edit's group so
+    // change tracking does not depend on returning to NSApplication's loop.
+    NSUndoManager *undoManager = document.undoManager;
+    undoManager.groupsByEvent = NO;
+    [undoManager beginUndoGrouping];
     [NSApp activateIgnoringOtherApps:YES];
     [preview.window makeKeyAndOrderFront:nil];
     [preview.window makeFirstResponder:preview];
@@ -43,10 +48,14 @@
         timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:preview.window.windowNumber context:nil
         characters:@"B" charactersIgnoringModifiers:@"b" isARepeat:NO keyCode:11]];
     NSString *expected = [source stringByReplacingOccurrencesOfString:@"**bold**" withString:@"**B**"];
-    // AppKit updates the document's change count when the undo group closes,
-    // after the text storage has already received the preview edit.
     [self expectationForPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
-        return [document.markdown isEqualToString:expected] && document.isDocumentEdited;
+        return [document.markdown isEqualToString:expected];
+    }] evaluatedWithObject:document handler:nil];
+    [self waitForExpectationsWithTimeout:5 handler:nil];
+    [editor breakUndoCoalescing];
+    [undoManager endUndoGrouping];
+    [self expectationForPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
+        return document.isDocumentEdited;
     }] evaluatedWithObject:document handler:nil];
     [self waitForExpectationsWithTimeout:5 handler:nil];
     XCTAssertTrue(document.isDocumentEdited);
