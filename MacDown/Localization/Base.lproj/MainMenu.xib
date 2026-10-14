@@ -7,7 +7,7 @@
     <objects>
         <customObject id="-2" userLabel="File's Owner" customClass="NSApplication">
             <connections>
-                <outlet property="updaterDelegate" destination="eq0-c4-vgQ" id="g9e-et-EYz"/>
+                <outlet property="delegate" destination="eq0-c4-vgQ" id="g9e-et-EYz"/>
             </connections>
         </customObject>
         <customObject id="-1" userLabel="First Responder" customClass="FirstResponder"/>
