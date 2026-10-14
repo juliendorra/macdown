@@ -44,6 +44,43 @@ The following editor themes and CSS files are extracted from [Mou](http://mouapp
 
 ## Development
 
+### Editing in the preview
+
+Click rendered text to place the caret and type directly. Preview selections
+select the corresponding Markdown range in the source pane without moving
+keyboard focus away from the preview. Edits use the document's normal undo,
+save, and autosave machinery and preserve surrounding Markdown formatting.
+Pasted text stays plain text; Command-Z and Shift-Command-Z undo and redo.
+Return starts a paragraph or continues a list, while Shift-Return inserts a
+Markdown line break. Command-click opens links; an ordinary click edits their
+labels.
+
+Generated content, arbitrary HTML, and selections crossing an incomplete
+formatting boundary may not have a safe text mapping. The preview shows a
+message directing those edits to the Markdown pane rather than guessing a
+source range. Edits from an outdated preview cannot overwrite newer source.
+
+The mutation handler and source map run in an isolated WebKit content world,
+separate from scripts embedded in Markdown. A map belongs to one rendered
+source revision and uses UTF-16 offsets matching NSTextView. Optimistic local
+updates let rapid typing proceed during the existing rendering debounce.
+Maps are built on interaction, and a rendered edit first maps only its changed
+block. Normal source typing avoids document-wide selection-map allocations;
+rapid preview typing reuses its known caret until a new selection needs a map.
+
+Run the focused native checks against an already built development app:
+
+```sh
+python3 Scripts/check-preview-editing.py .build/PreviewEditing/MacDown.app
+```
+
+The checks use isolated preferences and temporary documents, exercise real
+native keyboard input and Japanese composition, and cover selection, undo,
+Unicode, literal pasting, stale revisions, and invalid mutation messages.
+Run GUI checks with desktop access: their launcher detects a restricted
+sandbox before starting AppKit, avoiding a LaunchServices abort/crash dialog.
+Portable source-projection checks are included in `Scripts/check.sh`.
+
 ### Requirements and local builds
 
 This modernization targets macOS 13 or later on Apple Silicon and Intel,

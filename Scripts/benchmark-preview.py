@@ -13,6 +13,7 @@ import statistics
 import subprocess
 import tempfile
 import time
+from macos_test_support import require_desktop_access
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -99,6 +100,7 @@ def main():
     parser.add_argument('--sections', nargs='+', type=int, default=[10,1000])
     parser.add_argument('--repeats', type=int, default=2)
     args = parser.parse_args()
+    require_desktop_access()
     args.output = args.output.resolve(); args.output.mkdir(parents=True, exist_ok=True)
     dylib = args.output/'preview-benchmark.dylib'
     run('xcrun','clang','-dynamiclib','-fobjc-arc','-fno-modules','-undefined','dynamic_lookup',
