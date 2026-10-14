@@ -168,6 +168,7 @@ and highlights inserted code only. Complex scripts, embedded documents, changed
 styles/script lists, and custom page shells fall back to full navigation. The
 compiled HTML template is cached, scroll geometry is invalidated by text/font/
 size changes, and closing explicitly releases the preview and pending HTML.
+Explicit Render/Refresh keeps a full reload so edited stylesheet files are reread.
 
 On the local Apple Silicon/macOS 27 comparison (clang 15, SDK 14.4, two reversed
 repetitions), the final batch measured:

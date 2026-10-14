@@ -8,6 +8,7 @@
 
 @interface NSObject (PreviewBenchmark)
 - (NSPrintOperation *)printOperationWithSettings:(NSDictionary *)settings error:(NSError **)error;
+- (void)render:(id)sender;
 - (void)updateHeaderLocations;
 - (void)render;
 @end
@@ -262,9 +263,22 @@ static void require(BOOL value, NSString *message) {
             double nativeHeight=[[self.document valueForKey:@"previewContentHeight"] doubleValue];
             if (!error && [result[@"image"] integerValue]==192 && [result[@"height"] doubleValue]>previousHeight
                     && fabs(nativeHeight-[result[@"height"] doubleValue])<1) {
-                self.results[@"image_geometry_refresh"] = @YES; [self finish];
+                self.results[@"image_geometry_refresh"] = @YES; [self checkExplicitRefresh];
             } else [self after:0.02 run:^{ [self waitForImageHeight:previousHeight]; }];
         }];
+}
+- (void)checkExplicitRefresh {
+    NSUInteger previous = navigations;
+    [self.document render:nil];
+    self.deadline = now()+15;
+    [self waitForExplicitRefresh:previous];
+}
+- (void)waitForExplicitRefresh:(NSUInteger)previous {
+    require(now()<self.deadline,@"Explicit refresh did not reload the page");
+    if (navigations>previous && [[self.document valueForKey:@"isPreviewReady"] boolValue]
+            && ![[self.document valueForKey:@"alreadyRenderingInWeb"] boolValue]) {
+        self.results[@"explicit_refresh_navigation"] = @YES; [self finish];
+    } else [self after:0.01 run:^{ [self waitForExplicitRefresh:previous]; }];
 }
 - (void)finish {
     NSError *error = nil;

@@ -169,6 +169,7 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 @property NSUInteger previewGeneration;
 @property BOOL previewMetricsPending;
 @property BOOL previewLayoutPending;
+@property BOOL forcePreviewNavigation;
 @property BOOL previewScrollPending;
 @property BOOL editorGeometryDirty;
 @property NSSize editorGeometrySize;
@@ -1022,7 +1023,9 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 - (void)loadPreviewHTML:(NSString *)html
 {
     NSURL *baseURL = self.fileURL ?: self.preferences.htmlDefaultDirectoryUrl;
-    BOOL canUpdate = self.isPreviewReady && [self.currentBaseUrl isEqual:baseURL];
+    BOOL canUpdate = !self.forcePreviewNavigation && self.isPreviewReady
+        && [self.currentBaseUrl isEqual:baseURL];
+    self.forcePreviewNavigation = NO;
     self.alreadyRenderingInWeb = YES;
     self.isPreviewReady = NO;
     ++self.previewGeneration;
@@ -1440,6 +1443,8 @@ typedef NS_ENUM(NSUInteger, MPWordCountType) {
 
 - (IBAction)render:(id)sender
 {
+    // Explicit refresh must reread same-URL stylesheet/script resources too.
+    self.forcePreviewNavigation = YES;
     [self.renderer parseAndRenderLater];
 }
 
