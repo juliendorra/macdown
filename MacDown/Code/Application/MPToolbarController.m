@@ -99,7 +99,7 @@ static CGFloat itemWidth = 37;
 - (NSArray *)toolbarItemIdentifiersFromItemsArray:(NSArray *)toolbarItemsArray {
     NSMutableArray *orderedIdentifiers = [NSMutableArray new];
     
-    for (NSToolbarItem *item in self->toolbarItems) {
+    for (NSToolbarItem *item in toolbarItemsArray) {
         [orderedIdentifiers addObject:item.itemIdentifier];
     }
     
@@ -109,62 +109,30 @@ static CGFloat itemWidth = 37;
 - (void)selectedToolbarItemGroupItem:(NSSegmentedControl *)sender
 {
     NSInteger selectedIndex = sender.selectedSegment;
-    
-    NSToolbarItemGroup *selectedGroup = self->toolbarItemIdentifierObjectDictionary[sender.identifier];
-    NSToolbarItem *selectedItem = selectedGroup.subitems[selectedIndex];
-    
-    // Invoke the toolbar item's action
-    // Must convert to IMP to let the compiler know about the method definition
-    MPDocument *document = self.document;
-    IMP imp = [document methodForSelector:selectedItem.action];
-    void (*impFunc)(id) = (void *)imp;
-    impFunc(document);
+    NSToolbarItemGroup *group = self->toolbarItemIdentifierObjectDictionary[sender.identifier];
+    if (selectedIndex < 0 || selectedIndex >= (NSInteger)group.subitems.count)
+        return;
+    NSToolbarItem *item = group.subitems[selectedIndex];
+    [NSApp sendAction:item.action to:self.document from:sender];
 }
 
 
 #pragma mark - NSToolbarDelegate
 - (NSArray<NSString *> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar
 {
-    // From toolbar item dictionary(setupToolbarItems)
-    //NSArray *orderedToolbarItemIdentifiers = [self orderedToolbarDefaultItemKeysForDictionary:self->toolbarItems];
-    NSArray *orderedToolbarItemIdentifiers = [self toolbarItemIdentifiersFromItemsArray:self->toolbarItems];
-    
-    // Mixed identifiers from dictionary and space at below specified indices
-    NSMutableArray *defaultItemIdentifiers = [NSMutableArray new];
-    
-    // Add space after the specified toolbar item indices
-    int spaceAfterIndices[] = {}; // No space in the default set
-    int flexibleSpaceAfterIndices[] = {2, 3, 5, 7, 11};
-    int i = 0;
-    int j = 0;
-    int k = 0;
-    
-    for (NSString *itemIdentifier in orderedToolbarItemIdentifiers)
-    {
-        // exclude some toolbar items from the default toolbar
-        if ([itemIdentifier  isEqual: @"comment"]
-            || [itemIdentifier  isEqual: @"highlight"]
-            || [itemIdentifier  isEqual: @"strikethrough"]) {
-            // do nothing here
-        }else {
-            [defaultItemIdentifiers addObject:itemIdentifier];
-        }
-        
-        if (i == spaceAfterIndices[j])
-        {
-            [defaultItemIdentifiers addObject:NSToolbarSpaceItemIdentifier];
-            j++;
-        }
-        
-        if (i == flexibleSpaceAfterIndices[k])
-        {
+    NSArray *identifiers = [self toolbarItemIdentifiersFromItemsArray:self->toolbarItems];
+    NSMutableArray *defaultItemIdentifiers = [NSMutableArray array];
+    NSSet *excluded = [NSSet setWithArray:@[@"comment", @"highlight", @"strikethrough"]];
+    NSMutableIndexSet *spaces = [NSMutableIndexSet indexSet];
+    for (NSNumber *index in @[@2, @3, @5, @7, @11])
+        [spaces addIndex:index.unsignedIntegerValue];
+    [identifiers enumerateObjectsUsingBlock:^(NSString *identifier, NSUInteger index, BOOL *stop) {
+        if (![excluded containsObject:identifier])
+            [defaultItemIdentifiers addObject:identifier];
+        if ([spaces containsIndex:index])
             [defaultItemIdentifiers addObject:NSToolbarFlexibleSpaceItemIdentifier];
-            k++;
-        }
-        
-        i++;
-    }
-    
+    }];
+
     return [defaultItemIdentifiers copy];
 }
 
