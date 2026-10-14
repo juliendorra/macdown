@@ -4,6 +4,7 @@ Requires macOS Command Line Tools, Python 3, and ad-hoc development apps.
 No Xcode build, GitHub call, dependency installation, or cloud runner is used.
 """
 import argparse
+import hashlib
 import json
 import os
 import plistlib
@@ -84,9 +85,11 @@ def benchmark(app, path, dylib, folder, label):
                 except subprocess.TimeoutExpired: process.kill();process.wait()
     result = json.loads(output.read_text())
     with (app/'Contents/Info.plist').open('rb') as stream: info=plistlib.load(stream)
-    result['build_info']={key:info[key] for key in info if key.startswith('MPSource') or key.startswith('MPCompiledResources')}
+    result['build_info']={key:info[key] for key in info if key.startswith('MPSource') or key.startswith('MPCompiledResources')
+                          or key in {'CFBundleShortVersionString','CFBundleVersion','CFBundleBuildVersion'}}
     times = result['edit_dom_ready_ms']
     result.update(label=label, app=str(app), fixture_bytes=path.stat().st_size,
+                  fixture_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
                   median_edit_ms=statistics.median(times), p95_edit_ms=sorted(times)[int(.95*(len(times)-1))],
                   memory=snapshots)
     output.write_text(json.dumps(result, indent=2)+'\n')
@@ -100,8 +103,11 @@ def main():
     parser.add_argument('--sections', nargs='+', type=int, default=[10,1000])
     parser.add_argument('--repeats', type=int, default=2)
     args = parser.parse_args()
+    if args.repeats < 1 or any(n < 1 for n in args.sections):
+        parser.error('Sections and repeats must be positive')
     require_desktop_access()
     args.output = args.output.resolve(); args.output.mkdir(parents=True, exist_ok=True)
+    (args.output/'results.json').unlink(missing_ok=True)
     dylib = args.output/'preview-benchmark.dylib'
     run('xcrun','clang','-dynamiclib','-fobjc-arc','-fno-modules','-undefined','dynamic_lookup',
         '-I'+str(ROOT/'MacDown/Code/Document'),'-framework','Cocoa','-framework','WebKit',

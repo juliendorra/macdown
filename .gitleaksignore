@@ -1,0 +1,13 @@
+# Audited false positives: repository UUIDs in an obsolete upstream Xcode file.
+# Each exclusion applies to one finding in one historical commit.
+3f59837f948a56ea240d498ef2226e47272a0878:MacDown.xcworkspace/xcshareddata/MacDown.xcscmblueprint:generic-api-key:2
+3f59837f948a56ea240d498ef2226e47272a0878:MacDown.xcworkspace/xcshareddata/MacDown.xcscmblueprint:generic-api-key:11
+3f59837f948a56ea240d498ef2226e47272a0878:MacDown.xcworkspace/xcshareddata/MacDown.xcscmblueprint:generic-api-key:24
+3f59837f948a56ea240d498ef2226e47272a0878:MacDown.xcworkspace/xcshareddata/MacDown.xcscmblueprint:generic-api-key:29
+3f59837f948a56ea240d498ef2226e47272a0878:MacDown.xcworkspace/xcshareddata/MacDown.xcscmblueprint:generic-api-key:34
+# The audited repository IDs appearing again in a later upstream merge.
+806646a281dad9bb4176ad18c00966703a4dec5a:MacDown.xcworkspace/xcshareddata/MacDown.xcscmblueprint:generic-api-key:2
+806646a281dad9bb4176ad18c00966703a4dec5a:MacDown.xcworkspace/xcshareddata/MacDown.xcscmblueprint:generic-api-key:11
+806646a281dad9bb4176ad18c00966703a4dec5a:MacDown.xcworkspace/xcshareddata/MacDown.xcscmblueprint:generic-api-key:24
+806646a281dad9bb4176ad18c00966703a4dec5a:MacDown.xcworkspace/xcshareddata/MacDown.xcscmblueprint:generic-api-key:29
+806646a281dad9bb4176ad18c00966703a4dec5a:MacDown.xcworkspace/xcshareddata/MacDown.xcscmblueprint:generic-api-key:34

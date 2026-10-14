@@ -18,6 +18,7 @@ args = parser.parse_args()
 require_desktop_access()
 args.output = args.output.resolve()
 args.output.mkdir(parents=True, exist_ok=True)
+(args.output/'results.json').unlink(missing_ok=True)
 dylib = args.output/'preview-edit-checks.dylib'
 subprocess.run(['xcrun','clang','-dynamiclib','-fobjc-arc','-fno-modules','-undefined','dynamic_lookup',
                 '-I'+str(ROOT/'MacDown/Code/Document'),'-framework','Cocoa','-framework','WebKit',

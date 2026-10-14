@@ -3,7 +3,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 xcodebuild -version
-Scripts/check-macos-local.sh
+case "${1:-}" in
+  '') Scripts/check-macos-local.sh ;;
+  --portable-checked) Scripts/check-macos-local.sh --toolbar-only ;;
+  *) printf 'Usage: %s [--portable-checked]\n' "$0" >&2; exit 2 ;;
+esac
 Scripts/setup.sh
 mkdir -p Artifacts
 rm -rf Artifacts/MacDown.xcresult Artifacts/Diagnostics

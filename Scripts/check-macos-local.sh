@@ -2,7 +2,11 @@
 # Native regression checks with Command Line Tools; no Xcode or GitHub runner.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-Scripts/check.sh
+case "${1:-}" in
+  '') Scripts/check.sh ;;
+  --toolbar-only) ;;
+  *) printf 'Usage: %s [--toolbar-only]\n' "$0" >&2; exit 2 ;;
+esac
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 xcrun clang -fobjc-arc -fno-modules -fsanitize=undefined,bounds \

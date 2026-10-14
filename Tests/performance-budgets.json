@@ -1,0 +1,11 @@
+{
+  "median_edit_ms": 1000,
+  "p95_edit_ms": 1500,
+  "edited_total_mib": 512,
+  "closed_total_mib": 256,
+  "edit_navigations": 0,
+  "baseline_latency_ratio": 1.25,
+  "baseline_latency_slack_ms": 20,
+  "baseline_memory_ratio": 1.25,
+  "baseline_memory_slack_mib": 32
+}
